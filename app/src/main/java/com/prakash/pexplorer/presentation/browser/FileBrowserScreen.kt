@@ -418,12 +418,6 @@ private fun BrowserTopBar(
                 IconButton(onClick = onShare) {
                     Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.share))
                 }
-                IconButton(onClick = onCopy) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.copy))
-                }
-                IconButton(onClick = onMove) {
-                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.move))
-                }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
                 }
@@ -461,6 +455,22 @@ private fun BrowserTopBar(
                     onDismissRequest = { moreExpanded = false }
                 ) {
                     if (selectionMode) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.copy)) },
+                            leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
+                            onClick = {
+                                moreExpanded = false
+                                onCopy()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.move)) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = null) },
+                            onClick = {
+                                moreExpanded = false
+                                onMove()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.select_all)) },
                             leadingIcon = { Icon(Icons.Filled.SelectAll, contentDescription = null) },

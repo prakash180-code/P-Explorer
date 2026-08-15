@@ -65,7 +65,9 @@ fun NetworkScreen(
     onDisconnect: () -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
+    BackHandler {
+        if (state.connected && state.currentPath != null) onGoUp() else onBack()
+    }
     Scaffold(
         topBar = {
             TopAppBar(

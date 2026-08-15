@@ -91,7 +91,7 @@
     <string name="root_operation_not_allowed">The storage root cannot be changed this way.</string>
     <string name="cannot_move_into_itself">A folder cannot be copied or moved into itself.</string>
     <string name="properties_for">Properties for %1$s</string>
-    <string name="calculating">Calculating...</string>
+    <string name="calculating">Calculating</string>
     <string name="name">Name</string>
     <string name="path">Path</string>
     <string name="type">Type</string>
@@ -171,7 +171,7 @@
     <string name="large_files">Large files</string>
     <string name="duplicate_files">Duplicate files</string>
     <string name="scan_storage">Scan storage</string>
-    <string name="scan_in_progress">Scanning storage...</string>
+    <string name="scan_in_progress">Scanning storage</string>
     <string name="storage_usage">Storage usage</string>
     <string name="total_used_free">%1$s used of %2$s • %3$s free</string>
     <string name="storage_category_images">Images</string>
@@ -196,7 +196,7 @@
     <string name="p_hub">P-Hub</string>
     <string name="network_files">Network files</string>
     <string name="discover_devices">Discover devices</string>
-    <string name="discovering_devices">Discovering devices...</string>
+    <string name="discovering_devices">Discovering devices</string>
     <string name="no_network_devices">No P-Hub devices found on this Wi-Fi network.</string>
     <string name="connect">Connect</string>
     <string name="authentication_code">Authentication code</string>
