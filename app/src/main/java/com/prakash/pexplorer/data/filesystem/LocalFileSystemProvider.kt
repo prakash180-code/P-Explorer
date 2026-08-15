@@ -10,10 +10,15 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.ContextCompat
 import com.prakash.pexplorer.R
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.DuplicateGroup
 import com.prakash.pexplorer.domain.model.FileOperation
 import com.prakash.pexplorer.domain.model.FileProperties
 import com.prakash.pexplorer.domain.model.FileKind
+import com.prakash.pexplorer.domain.model.ScanProgress
 import com.prakash.pexplorer.domain.model.StorageInfo
+import com.prakash.pexplorer.domain.model.StorageAnalysis
+import com.prakash.pexplorer.domain.model.StorageCategory
+import com.prakash.pexplorer.domain.model.StorageCategoryUsage
 import com.prakash.pexplorer.domain.model.TransferProgress
 import com.prakash.pexplorer.domain.usecase.FileNameError
 import com.prakash.pexplorer.domain.usecase.FileNameValidator
@@ -22,17 +27,30 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import android.os.StatFs
 import java.util.ArrayDeque
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import kotlin.coroutines.coroutineContext
 
 class LocalFileSystemProvider(
     private val context: Context
 ) : FileSystemProvider {
+
+    @Volatile
+    private var searchIndex: List<ExplorerFile>? = null
 
     override val primaryStoragePath: String
         get() = Environment.getExternalStorageDirectory().absolutePath
@@ -89,6 +107,67 @@ class LocalFileSystemProvider(
         }
     }
 
+    override suspend fun search(query: String, showHidden: Boolean): Result<List<ExplorerFile>> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                requireStorageAccess()
+                val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+                if (normalizedQuery.isBlank()) return@runCatching emptyList()
+                val index = searchIndex ?: buildSearchIndex().also { searchIndex = it }
+                index.asSequence()
+                    .filter { showHidden || !isInHiddenPath(it.path) }
+                    .filter { file ->
+                        val name = file.name.lowercase(Locale.ROOT)
+                        val path = file.path.lowercase(Locale.ROOT)
+                        val extension = file.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                        val extensionQuery = normalizedQuery.removePrefix(".")
+                        val year = file.modifiedEpochMillis?.let {
+                            SimpleDateFormat("yyyy", Locale.ROOT).format(Date(it))
+                        }
+                            name.contains(normalizedQuery) ||
+                            path.contains(normalizedQuery) ||
+                            (extensionQuery.isNotBlank() && extension.contains(extensionQuery)) ||
+                            year?.contains(normalizedQuery) == true
+                    }
+                    .sortedWith(compareBy<ExplorerFile> { if (it.isDirectory) 0 else 1 }
+                        .thenBy { it.name.lowercase(Locale.ROOT) })
+                    .toList()
+            }
+        }
+
+    override suspend fun readText(path: String, maxBytes: Int): Result<TextContent> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                requireStorageAccess()
+                val file = resolveExisting(path)
+                if (!file.isFile) throw IOException(context.getString(R.string.preview_not_available))
+                val limit = maxBytes.coerceAtLeast(1)
+                val bytes = ByteArray(limit + 1)
+                var offset = 0
+                FileInputStream(file).use { input ->
+                    while (offset < bytes.size) {
+                        val count = input.read(bytes, offset, bytes.size - offset)
+                        if (count < 0) break
+                        offset += count
+                    }
+                }
+                TextContent(
+                    value = String(bytes, 0, minOf(offset, limit), StandardCharsets.UTF_8),
+                    isTruncated = offset > limit
+                )
+            }
+        }
+
+    override fun invalidateSearchIndex() {
+        searchIndex = null
+    }
+
+    override fun isFileAvailable(path: String): Boolean =
+        hasStorageAccess() && runCatching {
+            val file = File(path).canonicalFile
+            file.exists() && isPathInsideStorage(file.path)
+        }.getOrDefault(false)
+
     override suspend fun storageRoots(): Result<List<StorageInfo>> = withContext(Dispatchers.IO) {
         runCatching {
             storageDirectories().mapNotNull { storage ->
@@ -106,10 +185,70 @@ class LocalFileSystemProvider(
         }
     }
 
+    override suspend fun analyzeStorage(onProgress: (ScanProgress) -> Unit): Result<StorageAnalysis> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                requireStorageAccess()
+                val roots = storageRoots().getOrThrow()
+                val files = scanAllFiles(showHidden = false, onProgress)
+                val usage = StorageCategory.entries.associateWith { StorageCategoryUsage(it, 0L, 0) }
+                    .toMutableMap()
+                files.forEach { file ->
+                    val category = categoryFor(file)
+                    val current = usage.getValue(category)
+                    usage[category] = current.copy(
+                        bytes = current.bytes + file.sizeBytes,
+                        fileCount = current.fileCount + 1
+                    )
+                }
+                val totalBytes = roots.sumOf { it.totalBytes }
+                val freeBytes = roots.sumOf { it.freeBytes }
+                StorageAnalysis(
+                    totalBytes = totalBytes,
+                    usedBytes = (totalBytes - freeBytes).coerceAtLeast(0L),
+                    freeBytes = freeBytes,
+                    categories = StorageCategory.entries.map { usage.getValue(it) },
+                    largestFiles = files.sortedByDescending { it.sizeBytes }.take(100),
+                    scannedFileCount = files.size
+                )
+            }
+        }
+
+    override suspend fun findLargeFiles(
+        minimumBytes: Long,
+        showHidden: Boolean,
+        onProgress: (ScanProgress) -> Unit
+    ): Result<List<ExplorerFile>> = withContext(Dispatchers.IO) {
+        runCatching {
+            requireStorageAccess()
+            scanAllFiles(showHidden, onProgress)
+                .asSequence()
+                .filter { it.sizeBytes >= minimumBytes }
+                .sortedByDescending { it.sizeBytes }
+                .take(500)
+                .toList()
+        }
+    }
+
+    override suspend fun findDuplicates(
+        showHidden: Boolean,
+        onProgress: (ScanProgress) -> Unit
+    ): Result<List<DuplicateGroup>> = withContext(Dispatchers.IO) {
+        runCatching {
+            requireStorageAccess()
+            scanAllFiles(showHidden, onProgress)
+                .groupBy { file -> "${file.name.lowercase(Locale.ROOT)}:${file.sizeBytes}" }
+                .filterValues { files -> files.size > 1 }
+                .map { (key, files) -> DuplicateGroup(key = key, files = files) }
+                .sortedByDescending { it.totalBytes }
+        }
+    }
+
     override suspend fun createDirectory(parentPath: String, name: String): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 requireStorageAccess()
+                invalidateSearchIndex()
                 validateName(name)
                 val parent = resolveDirectory(parentPath)
                 val directory = File(parent, name).canonicalFile
@@ -128,6 +267,7 @@ class LocalFileSystemProvider(
         withContext(Dispatchers.IO) {
             runCatching {
                 requireStorageAccess()
+                invalidateSearchIndex()
                 validateName(newName)
                 val source = resolveExisting(path)
                 if (isStorageRoot(source)) {
@@ -154,6 +294,7 @@ class LocalFileSystemProvider(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             requireStorageAccess()
+            invalidateSearchIndex()
             val sources = paths.distinct().map(::resolveExisting)
             val total = sources.size
             sources.forEachIndexed { index, source ->
@@ -181,6 +322,7 @@ class LocalFileSystemProvider(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             requireStorageAccess()
+            invalidateSearchIndex()
             val destination = resolveDirectory(destinationDirectory)
             val sources = paths.distinct().map(::resolveExisting)
             val total = sources.size
@@ -210,6 +352,7 @@ class LocalFileSystemProvider(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             requireStorageAccess()
+            invalidateSearchIndex()
             val destination = resolveDirectory(destinationDirectory)
             val sources = paths.distinct().map(::resolveExisting)
             val total = sources.size
@@ -270,10 +413,115 @@ class LocalFileSystemProvider(
                     modifiedEpochMillis = attributes?.lastModifiedTime()?.toMillis()
                         ?: file.lastModified().takeIf { it > 0L },
                     accessedEpochMillis = attributes?.lastAccessTime()?.toMillis(),
-                    mimeType = explorerFile.mimeType
+                    mimeType = explorerFile.mimeType,
+                    isReadable = file.canRead(),
+                    isWritable = file.canWrite(),
+                    isExecutable = file.canExecute()
                 )
             }
         }
+
+    override suspend fun createArchive(
+        paths: List<String>,
+        destinationDirectory: String,
+        archiveName: String,
+        onProgress: (TransferProgress) -> Unit
+    ): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            requireStorageAccess()
+            invalidateSearchIndex()
+            val destination = resolveDirectory(destinationDirectory)
+            val sources = paths.distinct().map(::resolveExisting)
+            if (sources.isEmpty()) throw IOException(context.getString(R.string.operation_failed))
+            val requestedName = archiveName.trim().let {
+                if (it.lowercase(Locale.ROOT).endsWith(".zip")) it else "$it.zip"
+            }
+            validateName(requestedName)
+            val archive = uniqueDestination(destination, requestedName)
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(archive))).use { output ->
+                sources.forEachIndexed { index, source ->
+                    addToArchive(source, source.name, output)
+                    onProgress(
+                        TransferProgress(
+                            operation = FileOperation.COMPRESS,
+                            currentName = source.name,
+                            completedItems = index + 1,
+                            totalItems = sources.size
+                        )
+                    )
+                }
+            }
+            archive.absolutePath
+        }
+    }
+
+    override suspend fun extractArchive(
+        archivePath: String,
+        destinationDirectory: String,
+        extractToNewFolder: Boolean,
+        onProgress: (TransferProgress) -> Unit
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            requireStorageAccess()
+            invalidateSearchIndex()
+            val archive = resolveExisting(archivePath)
+            val destination = resolveDirectory(destinationDirectory)
+            val extractionRoot = if (extractToNewFolder) {
+                val folderName = archive.name.substringBeforeLast('.', archive.name)
+                val folder = uniqueDestination(destination, folderName)
+                if (!folder.mkdir()) throw IOException(context.getString(R.string.operation_failed))
+                folder
+            } else {
+                destination
+            }
+            ZipFile(archive).use { zipFile ->
+                val entries = mutableListOf<ZipEntry>()
+                val enumeration = zipFile.entries()
+                while (enumeration.hasMoreElements()) entries += enumeration.nextElement()
+                entries.forEachIndexed { index, entry ->
+                    coroutineContext.ensureActive()
+                    val entryName = entry.name.replace('\\', '/')
+                    val target = File(extractionRoot, entryName).canonicalFile
+                    if (!isSameOrDescendant(target, extractionRoot)) {
+                        throw IOException(context.getString(R.string.archive_path_not_allowed))
+                    }
+                    if (entry.isDirectory) {
+                        if (!target.exists() && !target.mkdirs()) {
+                            throw IOException(context.getString(R.string.operation_failed))
+                        }
+                    } else {
+                        val parent = target.parentFile?.canonicalFile
+                            ?: throw IOException(context.getString(R.string.operation_failed))
+                        if (!parent.exists() && !parent.mkdirs()) {
+                            throw IOException(context.getString(R.string.operation_failed))
+                        }
+                        val outputFile = if (target.exists()) {
+                            uniqueDestination(parent, target.name)
+                        } else {
+                            target
+                        }
+                        zipFile.getInputStream(entry).use { input ->
+                            BufferedInputStream(input).use { bufferedInput ->
+                                FileOutputStream(outputFile).use { output ->
+                                    BufferedOutputStream(output).use { bufferedOutput ->
+                                        bufferedInput.copyTo(bufferedOutput)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    onProgress(
+                        TransferProgress(
+                            operation = FileOperation.EXTRACT,
+                            currentName = entry.name,
+                            completedItems = index + 1,
+                            totalItems = entries.size
+                        )
+                    )
+                }
+            }
+        }
+    }
 
     private fun requireStorageAccess() {
         if (!hasStorageAccess()) {
@@ -344,6 +592,24 @@ class LocalFileSystemProvider(
         }
     }
 
+    private suspend fun addToArchive(source: File, entryName: String, output: ZipOutputStream) {
+        coroutineContext.ensureActive()
+        if (source.isDirectory) {
+            val directoryEntry = ZipEntry(entryName.trimEnd('/') + "/")
+            output.putNextEntry(directoryEntry)
+            output.closeEntry()
+            source.listFiles()?.forEach { child ->
+                addToArchive(child, "$entryName/${child.name}", output)
+            } ?: throw IOException(context.getString(R.string.operation_failed))
+        } else {
+            output.putNextEntry(ZipEntry(entryName))
+            BufferedInputStream(FileInputStream(source)).use { input ->
+                input.copyTo(output)
+            }
+            output.closeEntry()
+        }
+    }
+
     private suspend fun deleteEntry(file: File) {
         coroutineContext.ensureActive()
         if (file.isDirectory) {
@@ -374,6 +640,79 @@ class LocalFileSystemProvider(
         }
         return FolderStats(sizeBytes = sizeBytes, itemCount = itemCount)
     }
+
+    private suspend fun buildSearchIndex(): List<ExplorerFile> {
+        val pending = ArrayDeque<File>()
+        val visited = mutableSetOf<String>()
+        storageDirectories().forEach { pending.add(it.directory) }
+        val indexed = mutableListOf<ExplorerFile>()
+        while (pending.isNotEmpty()) {
+            coroutineContext.ensureActive()
+            val directory = pending.removeFirst()
+            val canonicalPath = runCatching { directory.canonicalPath }.getOrNull() ?: continue
+            if (!visited.add(canonicalPath)) continue
+            directory.listFiles()?.forEach { child ->
+                coroutineContext.ensureActive()
+                val explorerFile = toExplorerFile(child)
+                indexed += explorerFile
+                if (child.isDirectory) pending.addLast(child)
+            }
+        }
+        return indexed
+    }
+
+    private suspend fun scanAllFiles(
+        showHidden: Boolean,
+        onProgress: (ScanProgress) -> Unit
+    ): List<ExplorerFile> {
+        val pending = ArrayDeque<File>()
+        val visited = mutableSetOf<String>()
+        storageDirectories().forEach { pending.add(it.directory) }
+        val files = mutableListOf<ExplorerFile>()
+        var scannedFiles = 0
+        while (pending.isNotEmpty()) {
+            coroutineContext.ensureActive()
+            val directory = pending.removeFirst()
+            val canonicalPath = runCatching { directory.canonicalPath }.getOrNull() ?: continue
+            if (!visited.add(canonicalPath)) continue
+            directory.listFiles()?.forEach { child ->
+                coroutineContext.ensureActive()
+                if (child.isDirectory) {
+                    if (showHidden || !child.name.startsWith('.')) pending.addLast(child)
+                } else if (showHidden || !isInHiddenPath(child.path)) {
+                    val file = toExplorerFile(child)
+                    files += file
+                    scannedFiles++
+                    if (scannedFiles == 1 || scannedFiles % 100 == 0) {
+                        onProgress(ScanProgress(scannedFiles, file.path))
+                    }
+                }
+            }
+        }
+        return files
+    }
+
+    private fun categoryFor(file: ExplorerFile): StorageCategory {
+        if (file.path.split('/', '\\').any { it.equals("download", ignoreCase = true) }) {
+            return StorageCategory.DOWNLOADS
+        }
+        return when (file.kind) {
+            FileKind.IMAGE -> StorageCategory.IMAGES
+            FileKind.VIDEO -> StorageCategory.VIDEOS
+            FileKind.AUDIO -> StorageCategory.AUDIO
+            FileKind.DOCUMENT,
+            FileKind.SPREADSHEET,
+            FileKind.PRESENTATION,
+            FileKind.PDF,
+            FileKind.TEXT -> StorageCategory.DOCUMENTS
+            FileKind.ARCHIVE -> StorageCategory.ARCHIVES
+            FileKind.APK -> StorageCategory.APPS
+            else -> StorageCategory.OTHER
+        }
+    }
+
+    private fun isInHiddenPath(path: String): Boolean =
+        path.split('/', '\\').any { segment -> segment.startsWith('.') }
 
     private data class FolderStats(
         val sizeBytes: Long,

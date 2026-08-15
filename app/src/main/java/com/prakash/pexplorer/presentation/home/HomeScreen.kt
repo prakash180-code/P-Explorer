@@ -67,6 +67,7 @@ import com.prakash.pexplorer.presentation.navigation.UtilityDestination
 fun HomeScreen(
     state: ExplorerUiState,
     onOpenFiles: () -> Unit,
+    onOpenSearch: () -> Unit,
     onCreateFolder: () -> Unit,
     onOpenStorage: (String) -> Unit,
     onRequestStorageAccess: () -> Unit,
@@ -100,7 +101,7 @@ fun HomeScreen(
 
         item {
             QuickActions(
-                onOpenFiles = onOpenFiles,
+                onOpenSearch = onOpenSearch,
                 onCreateFolder = onCreateFolder,
                 onOpenAnalyzer = { onOpenUtility(UtilityDestination.ANALYZER) }
             )
@@ -358,7 +359,7 @@ private fun StorageCard(
 
 @Composable
 private fun QuickActions(
-    onOpenFiles: () -> Unit,
+    onOpenSearch: () -> Unit,
     onCreateFolder: () -> Unit,
     onOpenAnalyzer: () -> Unit
 ) {
@@ -368,7 +369,7 @@ private fun QuickActions(
     ) {
         item {
             AssistChip(
-                onClick = onOpenFiles,
+                onClick = onOpenSearch,
                 label = { Text(stringResource(R.string.search)) },
                 leadingIcon = {
                     Icon(

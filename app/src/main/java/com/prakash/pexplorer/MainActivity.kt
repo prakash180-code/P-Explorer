@@ -10,8 +10,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
 import androidx.core.view.WindowCompat
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.prakash.pexplorer.domain.model.ThemeMode
 import com.prakash.pexplorer.presentation.ExplorerViewModel
 import com.prakash.pexplorer.presentation.navigation.PExplorerApp
 import com.prakash.pexplorer.presentation.theme.PExplorerTheme
@@ -25,15 +30,29 @@ class MainActivity : ComponentActivity() {
         explorerViewModel.refresh()
     }
 
+    private val networkFilePicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let(explorerViewModel::uploadNetworkFile)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         updateSystemBarAppearance()
         setContent {
-            PExplorerTheme {
+            val uiState by explorerViewModel.uiState.collectAsStateWithLifecycle()
+            val darkTheme = when (uiState.preferences.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            SideEffect { updateSystemBarAppearance(darkTheme) }
+            PExplorerTheme(themeMode = uiState.preferences.themeMode) {
                 PExplorerApp(
                     viewModel = explorerViewModel,
-                    onRequestStorageAccess = ::requestStorageAccess
+                    onRequestStorageAccess = ::requestStorageAccess,
+                    onPickNetworkFile = { networkFilePicker.launch(arrayOf("*/*")) }
                 )
             }
         }
@@ -65,9 +84,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun updateSystemBarAppearance() {
-        val isDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
+    private fun updateSystemBarAppearance(darkTheme: Boolean? = null) {
+        val isDark = darkTheme ?: (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES)
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = !isDark
             isAppearanceLightNavigationBars = !isDark

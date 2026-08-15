@@ -2,6 +2,7 @@ package com.prakash.pexplorer.domain.usecase
 
 import com.prakash.pexplorer.domain.model.ExplorerFile
 import com.prakash.pexplorer.domain.model.FileKind
+import com.prakash.pexplorer.domain.model.SortOrder
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -23,11 +24,28 @@ class FileSorterTest {
         )
     }
 
-    private fun explorerFile(name: String, directory: Boolean = false) = ExplorerFile(
+    @Test
+    fun sizeSortingCanMixFoldersAndFiles() {
+        val files = listOf(
+            explorerFile("small.txt", sizeBytes = 2),
+            explorerFile("large.txt", sizeBytes = 20),
+            explorerFile("folder", directory = true)
+        )
+
+        val sorted = FileSorter.sort(files, SortOrder.SIZE_LARGEST, foldersFirst = false)
+
+        assertEquals(listOf("large.txt", "small.txt", "folder"), sorted.map { it.name })
+    }
+
+    private fun explorerFile(
+        name: String,
+        directory: Boolean = false,
+        sizeBytes: Long = 0L
+    ) = ExplorerFile(
         path = "/storage/emulated/0/$name",
         name = name,
         isDirectory = directory,
-        sizeBytes = 0L,
+        sizeBytes = sizeBytes,
         modifiedEpochMillis = null,
         mimeType = null,
         kind = if (directory) FileKind.FOLDER else FileKind.UNKNOWN

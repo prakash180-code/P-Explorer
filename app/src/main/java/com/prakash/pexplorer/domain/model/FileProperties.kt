@@ -10,5 +10,8 @@ data class FileProperties(
     val createdEpochMillis: Long?,
     val modifiedEpochMillis: Long?,
     val accessedEpochMillis: Long?,
-    val mimeType: String?
+    val mimeType: String?,
+    val isReadable: Boolean,
+    val isWritable: Boolean,
+    val isExecutable: Boolean
 )

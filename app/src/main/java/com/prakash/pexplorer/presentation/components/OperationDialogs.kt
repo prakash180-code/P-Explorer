@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Folder
@@ -233,6 +234,8 @@ fun TransferProgressDialog(
         FileOperation.COPY -> R.string.copying
         FileOperation.MOVE -> R.string.moving
         FileOperation.DELETE -> R.string.deleting
+        FileOperation.COMPRESS -> R.string.compressing
+        FileOperation.EXTRACT -> R.string.extracting
     }
     AlertDialog(
         onDismissRequest = { if (!state.isRunning) onDismiss() },
@@ -246,6 +249,7 @@ fun TransferProgressDialog(
                     FileOperation.COPY -> Icons.Filled.ContentCopy
                     FileOperation.MOVE -> Icons.AutoMirrored.Filled.DriveFileMove
                     FileOperation.DELETE -> Icons.Filled.Delete
+                    FileOperation.COMPRESS, FileOperation.EXTRACT -> Icons.Filled.Archive
                 },
                 contentDescription = null
             )
@@ -371,6 +375,14 @@ private fun PropertyList(properties: FileProperties) {
         PropertyRow(
             stringResource(R.string.mime_type),
             properties.mimeType ?: stringResource(R.string.not_available)
+        )
+        PropertyRow(
+            stringResource(R.string.permissions),
+            buildString {
+                append(if (properties.isReadable) "r" else "-")
+                append(if (properties.isWritable) "w" else "-")
+                append(if (properties.isExecutable) "x" else "-")
+            }
         )
     }
 }

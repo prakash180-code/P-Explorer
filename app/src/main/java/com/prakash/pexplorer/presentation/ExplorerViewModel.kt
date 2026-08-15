@@ -1,19 +1,38 @@
 package com.prakash.pexplorer.presentation
 
 import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.prakash.pexplorer.R
 import com.prakash.pexplorer.data.filesystem.LocalFileSystemProvider
+import com.prakash.pexplorer.data.network.NetworkFileProvider
+import com.prakash.pexplorer.data.network.PHubNetworkProvider
+import com.prakash.pexplorer.data.preferences.MetadataStore
 import com.prakash.pexplorer.data.repository.FileRepository
+import com.prakash.pexplorer.data.repository.MetadataRepository
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.ExplorerPreferences
 import com.prakash.pexplorer.domain.model.FileOperation
 import com.prakash.pexplorer.domain.model.FileProperties
+import com.prakash.pexplorer.domain.model.FileReference
+import com.prakash.pexplorer.domain.model.DuplicateGroup
+import com.prakash.pexplorer.domain.model.NetworkDevice
+import com.prakash.pexplorer.domain.model.NetworkFileEntry
+import com.prakash.pexplorer.domain.model.NetworkTransferProgress
+import com.prakash.pexplorer.domain.model.SearchUiState
+import com.prakash.pexplorer.domain.model.ScanProgress
+import com.prakash.pexplorer.domain.model.SortOrder
+import com.prakash.pexplorer.domain.model.StorageAnalysis
 import com.prakash.pexplorer.domain.model.StorageInfo
+import com.prakash.pexplorer.domain.model.ThemeMode
 import com.prakash.pexplorer.domain.model.TransferProgress
 import com.prakash.pexplorer.domain.model.ViewMode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 data class BrowserUiState(
@@ -55,6 +75,49 @@ data class PropertiesUiState(
     val errorMessage: String? = null
 )
 
+data class StoredFileUi(
+    val reference: FileReference,
+    val isAvailable: Boolean
+)
+
+data class ScanUiState(
+    val isScanning: Boolean = false,
+    val scannedFiles: Int = 0,
+    val currentPath: String? = null,
+    val errorMessage: String? = null
+)
+
+data class AnalyzerUiState(
+    val scan: ScanUiState = ScanUiState(),
+    val analysis: StorageAnalysis? = null
+)
+
+data class LargeFilesUiState(
+    val minimumBytes: Long = 100L * 1024L * 1024L,
+    val scan: ScanUiState = ScanUiState(),
+    val files: List<ExplorerFile> = emptyList()
+)
+
+data class DuplicateUiState(
+    val scan: ScanUiState = ScanUiState(),
+    val groups: List<DuplicateGroup> = emptyList()
+)
+
+data class NetworkUiState(
+    val isDiscovering: Boolean = false,
+    val devices: List<NetworkDevice> = emptyList(),
+    val selectedDevice: NetworkDevice? = null,
+    val challengeCodes: List<String> = emptyList(),
+    val isConnecting: Boolean = false,
+    val connected: Boolean = false,
+    val roots: List<NetworkFileEntry> = emptyList(),
+    val files: List<NetworkFileEntry> = emptyList(),
+    val currentPath: String? = null,
+    val pathStack: List<String> = emptyList(),
+    val download: NetworkTransferProgress? = null,
+    val errorMessage: String? = null
+)
+
 data class ExplorerUiState(
     val storage: List<StorageInfo> = emptyList(),
     val storageLoading: Boolean = true,
@@ -64,11 +127,22 @@ data class ExplorerUiState(
     val browserRootPath: String,
     val browser: BrowserUiState,
     val transfer: TransferUiState? = null,
-    val properties: PropertiesUiState? = null
+    val properties: PropertiesUiState? = null,
+    val preferences: ExplorerPreferences = ExplorerPreferences(),
+    val favoriteItems: List<StoredFileUi> = emptyList(),
+    val recentItems: List<StoredFileUi> = emptyList(),
+    val search: SearchUiState = SearchUiState(),
+    val preview: PreviewUiState? = null,
+    val analyzer: AnalyzerUiState = AnalyzerUiState(),
+    val largeFiles: LargeFilesUiState = LargeFilesUiState(),
+    val duplicates: DuplicateUiState = DuplicateUiState(),
+    val network: NetworkUiState = NetworkUiState()
 )
 
 class ExplorerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = FileRepository(LocalFileSystemProvider(application))
+    private val metadataRepository = MetadataRepository(MetadataStore(application))
+    private val networkProvider: NetworkFileProvider = PHubNetworkProvider(application)
     private val _uiState = MutableStateFlow(
         ExplorerUiState(
             browserRootPath = repository.primaryStoragePath,
@@ -83,8 +157,17 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private var directoryJob: Job? = null
     private var operationJob: Job? = null
     private var propertiesJob: Job? = null
+    private var searchJob: Job? = null
+    private var storedItemsJob: Job? = null
+    private var previewJob: Job? = null
+    private var analyzerJob: Job? = null
+    private var largeFilesJob: Job? = null
+    private var duplicatesJob: Job? = null
+    private var networkJob: Job? = null
+    private var preferencesInitialized = false
 
     init {
+        observePreferences()
         refresh()
     }
 
@@ -120,6 +203,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
         directoryJob?.cancel()
         val browserRootPath = repository.storageRootPathFor(path) ?: _uiState.value.browserRootPath
+        val preferences = _uiState.value.preferences
         _uiState.update {
             it.copy(
                 browserRootPath = browserRootPath,
@@ -133,6 +217,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             )
         }
 
+        if (preferencesInitialized && preferences.rememberLastFolder) {
+            viewModelScope.launch { metadataRepository.setLastFolder(path) }
+        }
+
         if (!repository.hasStorageAccess()) {
             _uiState.update {
                 it.copy(browser = it.browser.copy(isLoading = false, errorMessage = permissionMessage()))
@@ -141,7 +229,12 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
 
         directoryJob = viewModelScope.launch {
-            repository.listDirectory(path, showHidden = false)
+            repository.listDirectory(
+                path = path,
+                showHidden = preferences.showHiddenFiles,
+                sortOrder = preferences.sortOrder,
+                foldersFirst = preferences.foldersFirst
+            )
                 .onSuccess { files ->
                     _uiState.update {
                         it.copy(
@@ -178,6 +271,478 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun setViewMode(viewMode: ViewMode) {
         _uiState.update { it.copy(viewMode = viewMode) }
+        viewModelScope.launch { metadataRepository.setViewMode(viewMode) }
+    }
+
+    fun setSortOrder(sortOrder: SortOrder) {
+        viewModelScope.launch { metadataRepository.setSortOrder(sortOrder) }
+    }
+
+    fun setFoldersFirst(enabled: Boolean) {
+        viewModelScope.launch { metadataRepository.setFoldersFirst(enabled) }
+    }
+
+    fun setShowHiddenFiles(enabled: Boolean) {
+        viewModelScope.launch { metadataRepository.setShowHiddenFiles(enabled) }
+    }
+
+    fun setShowFileExtensions(enabled: Boolean) {
+        viewModelScope.launch { metadataRepository.setShowFileExtensions(enabled) }
+    }
+
+    fun setThemeMode(themeMode: ThemeMode) {
+        viewModelScope.launch { metadataRepository.setThemeMode(themeMode) }
+    }
+
+    fun setConfirmBeforeDelete(enabled: Boolean) {
+        viewModelScope.launch { metadataRepository.setConfirmBeforeDelete(enabled) }
+    }
+
+    fun setConfirmBeforeOverwrite(enabled: Boolean) {
+        viewModelScope.launch { metadataRepository.setConfirmBeforeOverwrite(enabled) }
+    }
+
+    fun setRememberLastFolder(enabled: Boolean) {
+        viewModelScope.launch { metadataRepository.setRememberLastFolder(enabled) }
+    }
+
+    fun clearCache() {
+        repository.invalidateSearchIndex()
+        emitMessage(R.string.cache_cleared)
+    }
+
+    fun isFavorite(path: String): Boolean =
+        _uiState.value.preferences.favorites.any { it.path == path }
+
+    fun toggleFavorite(file: ExplorerFile) {
+        viewModelScope.launch { metadataRepository.toggleFavorite(file.toReference()) }
+    }
+
+    fun removeFavorite(path: String) {
+        viewModelScope.launch { metadataRepository.removeFavorite(path) }
+    }
+
+    fun recordRecent(file: ExplorerFile) {
+        viewModelScope.launch {
+            metadataRepository.recordRecent(file.toReference(System.currentTimeMillis()))
+        }
+    }
+
+    fun removeRecent(path: String) {
+        viewModelScope.launch { metadataRepository.removeRecent(path) }
+    }
+
+    fun clearRecent() {
+        viewModelScope.launch { metadataRepository.clearRecent() }
+    }
+
+    fun clearSearchHistory() {
+        viewModelScope.launch { metadataRepository.clearSearchHistory() }
+    }
+
+    fun openPreview(file: ExplorerFile) {
+        previewJob?.cancel()
+        _uiState.update {
+            it.copy(
+                preview = PreviewUiState(
+                    file = file,
+                    isLoading = file.kind == com.prakash.pexplorer.domain.model.FileKind.TEXT
+                )
+            )
+        }
+        if (file.kind != com.prakash.pexplorer.domain.model.FileKind.TEXT) return
+        previewJob = viewModelScope.launch {
+            repository.readText(file.path, MAX_TEXT_PREVIEW_BYTES)
+                .onSuccess { content ->
+                    _uiState.update {
+                        it.copy(
+                            preview = it.preview?.copy(
+                                text = content.value,
+                                isLoading = false,
+                                isTruncated = content.isTruncated
+                            )
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(
+                            preview = it.preview?.copy(
+                                isLoading = false,
+                                errorMessage = friendlyError(error)
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
+    fun clearPreview() {
+        previewJob?.cancel()
+        previewJob = null
+        _uiState.update { it.copy(preview = null) }
+    }
+
+    fun scanStorageAnalysis() {
+        analyzerJob?.cancel()
+        _uiState.update {
+            it.copy(
+                analyzer = it.analyzer.copy(
+                    scan = ScanUiState(isScanning = true),
+                    analysis = null
+                )
+            )
+        }
+        analyzerJob = viewModelScope.launch {
+            repository.analyzeStorage(::updateAnalyzerProgress)
+                .onSuccess { analysis ->
+                    _uiState.update {
+                        it.copy(
+                            analyzer = it.analyzer.copy(
+                                scan = ScanUiState(),
+                                analysis = analysis
+                            )
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(
+                            analyzer = it.analyzer.copy(
+                                scan = ScanUiState(errorMessage = friendlyError(error)),
+                                analysis = null
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
+    fun scanLargeFiles(minimumBytes: Long = _uiState.value.largeFiles.minimumBytes) {
+        largeFilesJob?.cancel()
+        _uiState.update {
+            it.copy(
+                largeFiles = it.largeFiles.copy(
+                    minimumBytes = minimumBytes,
+                    scan = ScanUiState(isScanning = true),
+                    files = emptyList()
+                )
+            )
+        }
+        largeFilesJob = viewModelScope.launch {
+            repository.findLargeFiles(
+                minimumBytes = minimumBytes,
+                showHidden = _uiState.value.preferences.showHiddenFiles,
+                onProgress = ::updateLargeFilesProgress
+            ).onSuccess { files ->
+                _uiState.update {
+                    it.copy(
+                        largeFiles = it.largeFiles.copy(scan = ScanUiState(), files = files)
+                    )
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                _uiState.update {
+                    it.copy(
+                        largeFiles = it.largeFiles.copy(
+                            scan = ScanUiState(errorMessage = friendlyError(error)),
+                            files = emptyList()
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun scanDuplicates() {
+        duplicatesJob?.cancel()
+        _uiState.update {
+            it.copy(duplicates = it.duplicates.copy(scan = ScanUiState(isScanning = true), groups = emptyList()))
+        }
+        duplicatesJob = viewModelScope.launch {
+            repository.findDuplicates(
+                showHidden = _uiState.value.preferences.showHiddenFiles,
+                onProgress = ::updateDuplicateProgress
+            ).onSuccess { groups ->
+                _uiState.update {
+                    it.copy(duplicates = it.duplicates.copy(scan = ScanUiState(), groups = groups))
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                _uiState.update {
+                    it.copy(
+                        duplicates = it.duplicates.copy(
+                            scan = ScanUiState(errorMessage = friendlyError(error)),
+                            groups = emptyList()
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun discoverNetwork() {
+        networkJob?.cancel()
+        _uiState.update {
+            it.copy(network = it.network.copy(isDiscovering = true, errorMessage = null, devices = emptyList()))
+        }
+        networkJob = viewModelScope.launch {
+            networkProvider.discover()
+                .onSuccess { devices ->
+                    _uiState.update {
+                        it.copy(network = it.network.copy(isDiscovering = false, devices = devices))
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(network = it.network.copy(isDiscovering = false, errorMessage = networkError(error)))
+                    }
+                }
+        }
+    }
+
+    fun requestNetworkChallenge(device: NetworkDevice) {
+        networkJob?.cancel()
+        _uiState.update {
+            it.copy(
+                network = it.network.copy(
+                    selectedDevice = device,
+                    challengeCodes = emptyList(),
+                    isConnecting = true,
+                    errorMessage = null
+                )
+            )
+        }
+        networkJob = viewModelScope.launch {
+            networkProvider.requestChallenge(device)
+                .onSuccess { codes ->
+                    _uiState.update {
+                        it.copy(network = it.network.copy(isConnecting = false, challengeCodes = codes))
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(network = it.network.copy(isConnecting = false, errorMessage = networkError(error)))
+                    }
+                }
+        }
+    }
+
+    fun connectNetwork(authCode: String) {
+        val device = _uiState.value.network.selectedDevice ?: return
+        networkJob?.cancel()
+        _uiState.update {
+            it.copy(network = it.network.copy(isConnecting = true, errorMessage = null))
+        }
+        networkJob = viewModelScope.launch {
+            networkProvider.connect(device, authCode)
+                .onSuccess { roots ->
+                    _uiState.update {
+                        it.copy(
+                            network = it.network.copy(
+                                isConnecting = false,
+                                connected = true,
+                                challengeCodes = emptyList(),
+                                roots = roots,
+                                files = emptyList(),
+                                currentPath = null,
+                                pathStack = emptyList(),
+                                errorMessage = null
+                            )
+                        )
+                    }
+                    emitMessage(R.string.network_connected)
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(network = it.network.copy(isConnecting = false, errorMessage = networkError(error)))
+                    }
+                }
+        }
+    }
+
+    fun openNetworkDirectory(path: String) {
+        networkJob?.cancel()
+        val previousPath = _uiState.value.network.currentPath
+        _uiState.update {
+            it.copy(
+                network = it.network.copy(
+                    isConnecting = true,
+                    currentPath = path,
+                    pathStack = if (previousPath == null) it.network.pathStack else it.network.pathStack + previousPath,
+                    errorMessage = null
+                )
+            )
+        }
+        networkJob = viewModelScope.launch {
+            networkProvider.list(path)
+                .onSuccess { files ->
+                    _uiState.update {
+                        it.copy(network = it.network.copy(isConnecting = false, files = files))
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(network = it.network.copy(isConnecting = false, errorMessage = networkError(error)))
+                    }
+                }
+        }
+    }
+
+    fun goUpNetwork() {
+        val state = _uiState.value.network
+        val parent = state.pathStack.lastOrNull()
+        if (parent == null) {
+            _uiState.update { it.copy(network = it.network.copy(currentPath = null, files = emptyList())) }
+        } else {
+            _uiState.update {
+                it.copy(
+                    network = it.network.copy(
+                        pathStack = state.pathStack.dropLast(1),
+                        currentPath = parent,
+                        isConnecting = true,
+                        errorMessage = null
+                    )
+                )
+            }
+            networkJob?.cancel()
+            networkJob = viewModelScope.launch {
+                networkProvider.list(parent)
+                    .onSuccess { files ->
+                        _uiState.update {
+                            it.copy(network = it.network.copy(isConnecting = false, files = files))
+                        }
+                    }
+                    .onFailure { error ->
+                        if (error is CancellationException) return@onFailure
+                        _uiState.update {
+                            it.copy(network = it.network.copy(isConnecting = false, errorMessage = networkError(error)))
+                        }
+                    }
+            }
+        }
+    }
+
+    fun downloadNetworkFile(entry: NetworkFileEntry) {
+        networkJob?.cancel()
+        networkJob = viewModelScope.launch {
+            networkProvider.download(entry) { progress ->
+                _uiState.update { it.copy(network = it.network.copy(download = progress)) }
+            }.onSuccess {
+                _uiState.update { it.copy(network = it.network.copy(download = null)) }
+                emitMessage(R.string.network_downloaded)
+            }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                _uiState.update { it.copy(network = it.network.copy(download = null, errorMessage = networkError(error))) }
+            }
+        }
+    }
+
+    fun uploadNetworkFile(uri: Uri) {
+        networkJob?.cancel()
+        networkJob = viewModelScope.launch {
+            val application = getApplication<Application>()
+            val resolver = application.contentResolver
+            val fileName = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }
+                ?: "upload_${System.currentTimeMillis()}"
+            val temporaryFile = File(application.cacheDir, "network-upload-${System.currentTimeMillis()}")
+            try {
+                withContext(Dispatchers.IO) {
+                    resolver.openInputStream(uri)?.use { input ->
+                        temporaryFile.outputStream().use { output -> input.copyTo(output) }
+                    } ?: error("Could not read the selected file")
+                }
+                val uploadFile = File(temporaryFile.parentFile, fileName).also {
+                    temporaryFile.renameTo(it)
+                }
+                networkProvider.upload(uploadFile, _uiState.value.network.currentPath.orEmpty()) { progress ->
+                    _uiState.update { it.copy(network = it.network.copy(download = progress)) }
+                }.onSuccess {
+                    _uiState.update { it.copy(network = it.network.copy(download = null)) }
+                    emitMessage(R.string.network_uploaded)
+                    val currentPath = _uiState.value.network.currentPath
+                    if (currentPath != null) {
+                        networkProvider.list(currentPath).onSuccess { files ->
+                            _uiState.update { it.copy(network = it.network.copy(files = files)) }
+                        }
+                    }
+                }.onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(network = it.network.copy(download = null, errorMessage = networkError(error)))
+                    }
+                }
+                uploadFile.delete()
+            } catch (error: Throwable) {
+                if (error !is CancellationException) {
+                    _uiState.update {
+                        it.copy(network = it.network.copy(download = null, errorMessage = networkError(error)))
+                    }
+                }
+                temporaryFile.delete()
+            }
+        }
+    }
+
+    fun disconnectNetwork() {
+        networkJob?.cancel()
+        networkProvider.disconnect()
+        _uiState.update { it.copy(network = NetworkUiState()) }
+    }
+
+    fun updateSearchQuery(query: String) {
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(
+                search = it.search.copy(
+                    query = query,
+                    results = if (query.isBlank()) emptyList() else it.search.results,
+                    hasSearched = if (query.isBlank()) false else it.search.hasSearched,
+                    errorMessage = null
+                )
+            )
+        }
+        if (query.isBlank()) return
+
+        searchJob = viewModelScope.launch {
+            delay(350)
+            _uiState.update { it.copy(search = it.search.copy(isSearching = true, errorMessage = null)) }
+            repository.search(query, _uiState.value.preferences.showHiddenFiles)
+                .onSuccess { results ->
+                    _uiState.update {
+                        it.copy(
+                            search = it.search.copy(
+                                results = results,
+                                isSearching = false,
+                                hasSearched = true,
+                                errorMessage = null
+                            )
+                        )
+                    }
+                    metadataRepository.recordSearch(query)
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(
+                            search = it.search.copy(
+                                isSearching = false,
+                                hasSearched = true,
+                                errorMessage = friendlyError(error)
+                            )
+                        )
+                    }
+                }
+        }
     }
 
     fun toggleSelection(path: String) {
@@ -209,6 +774,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 .onSuccess {
                     emitMessage(R.string.folder_created)
                     openDirectory(parentPath)
+                    refreshStoredItems(_uiState.value.preferences)
                 }
                 .onFailure(::emitOperationError)
         }
@@ -221,6 +787,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 .onSuccess {
                     emitMessage(R.string.renamed_successfully)
                     openDirectory(parentPath)
+                    refreshStoredItems(_uiState.value.preferences)
                 }
                 .onFailure(::emitOperationError)
         }
@@ -236,6 +803,14 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun move(paths: List<String>, destinationDirectory: String) {
         startTransfer(FileOperation.MOVE, paths, destinationDirectory)
+    }
+
+    fun compress(paths: List<String>, destinationDirectory: String, archiveName: String) {
+        startArchive(FileOperation.COMPRESS, paths, destinationDirectory, archiveName, false)
+    }
+
+    fun extract(path: String, destinationDirectory: String, extractToNewFolder: Boolean) {
+        startArchive(FileOperation.EXTRACT, listOf(path), destinationDirectory, null, extractToNewFolder)
     }
 
     fun cancelTransfer() {
@@ -313,6 +888,59 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private fun observePreferences() {
+        viewModelScope.launch {
+            metadataRepository.preferences.collect { preferences ->
+                val previous = _uiState.value.preferences
+                val firstEmission = !preferencesInitialized
+                preferencesInitialized = true
+                _uiState.update {
+                    it.copy(
+                        preferences = preferences,
+                        viewMode = preferences.viewMode
+                    )
+                }
+                refreshStoredItems(preferences)
+
+                if (firstEmission) {
+                    val rememberedPath = preferences.lastFolder
+                    if (preferences.rememberLastFolder &&
+                        rememberedPath != null &&
+                        repository.isPathInsideStorage(rememberedPath)
+                    ) {
+                        _uiState.update {
+                            it.copy(
+                                browserRootPath = repository.storageRootPathFor(rememberedPath)
+                                    ?: it.browserRootPath,
+                                browser = it.browser.copy(path = rememberedPath)
+                            )
+                        }
+                        if (repository.hasStorageAccess()) openDirectory(rememberedPath)
+                    }
+                } else if (
+                    previous.showHiddenFiles != preferences.showHiddenFiles ||
+                    previous.sortOrder != preferences.sortOrder ||
+                    previous.foldersFirst != preferences.foldersFirst
+                ) {
+                    openDirectory(_uiState.value.browser.path)
+                }
+            }
+        }
+    }
+
+    private fun refreshStoredItems(preferences: ExplorerPreferences) {
+        storedItemsJob?.cancel()
+        storedItemsJob = viewModelScope.launch {
+            val favorites = withContext(Dispatchers.IO) {
+                preferences.favorites.map { StoredFileUi(it, repository.isFileAvailable(it.path)) }
+            }
+            val recent = withContext(Dispatchers.IO) {
+                preferences.recentFiles.map { StoredFileUi(it, repository.isFileAvailable(it.path)) }
+            }
+            _uiState.update { it.copy(favoriteItems = favorites, recentItems = recent) }
+        }
+    }
+
     private fun startTransfer(
         operation: FileOperation,
         paths: List<String>,
@@ -343,6 +971,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     destinationDirectory.orEmpty(),
                     ::updateTransferProgress
                 )
+                FileOperation.COMPRESS, FileOperation.EXTRACT ->
+                    Result.failure(IllegalStateException(getApplication<Application>().getString(R.string.operation_failed)))
             }
             result
                 .onSuccess {
@@ -353,8 +983,81 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                             FileOperation.COPY -> R.string.items_copied
                             FileOperation.MOVE -> R.string.items_moved
                             FileOperation.DELETE -> R.string.items_deleted
+                            FileOperation.COMPRESS -> R.string.archive_created
+                            FileOperation.EXTRACT -> R.string.archive_extracted
                         }
                     )
+                    openDirectory(_uiState.value.browser.path)
+                    refreshStoredItems(_uiState.value.preferences)
+                    if (operation == FileOperation.DELETE) {
+                        if (_uiState.value.largeFiles.files.isNotEmpty()) {
+                            scanLargeFiles(_uiState.value.largeFiles.minimumBytes)
+                        }
+                        if (_uiState.value.duplicates.groups.isNotEmpty()) {
+                            scanDuplicates()
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) return@onFailure
+                    _uiState.update {
+                        it.copy(
+                            transfer = it.transfer?.copy(
+                                isRunning = false,
+                                errorMessage = friendlyError(error)
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun startArchive(
+        operation: FileOperation,
+        paths: List<String>,
+        destinationDirectory: String,
+        archiveName: String?,
+        extractToNewFolder: Boolean
+    ) {
+        val sources = paths.distinct()
+        if (sources.isEmpty()) return
+        operationJob?.cancel()
+        _uiState.update {
+            it.copy(
+                transfer = TransferUiState(
+                    operation = operation,
+                    totalItems = sources.size
+                )
+            )
+        }
+        operationJob = viewModelScope.launch {
+            val result = if (operation == FileOperation.COMPRESS) {
+                repository.createArchive(
+                    paths = sources,
+                    destinationDirectory = destinationDirectory,
+                    archiveName = archiveName.orEmpty(),
+                    onProgress = ::updateTransferProgress
+                ).map { }
+            } else {
+                repository.extractArchive(
+                    archivePath = sources.first(),
+                    destinationDirectory = destinationDirectory,
+                    extractToNewFolder = extractToNewFolder,
+                    onProgress = ::updateTransferProgress
+                )
+            }
+            result
+                .onSuccess {
+                    _uiState.update { it.copy(transfer = null) }
+                    clearSelection()
+                    emitMessage(
+                        if (operation == FileOperation.COMPRESS) {
+                            R.string.archive_created
+                        } else {
+                            R.string.archive_extracted
+                        }
+                    )
+                    repository.invalidateSearchIndex()
                     openDirectory(_uiState.value.browser.path)
                 }
                 .onFailure { error ->
@@ -382,6 +1085,45 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private fun updateAnalyzerProgress(progress: ScanProgress) {
+        _uiState.update {
+            it.copy(
+                analyzer = it.analyzer.copy(
+                    scan = it.analyzer.scan.copy(
+                        scannedFiles = progress.scannedFiles,
+                        currentPath = progress.currentPath
+                    )
+                )
+            )
+        }
+    }
+
+    private fun updateLargeFilesProgress(progress: ScanProgress) {
+        _uiState.update {
+            it.copy(
+                largeFiles = it.largeFiles.copy(
+                    scan = it.largeFiles.scan.copy(
+                        scannedFiles = progress.scannedFiles,
+                        currentPath = progress.currentPath
+                    )
+                )
+            )
+        }
+    }
+
+    private fun updateDuplicateProgress(progress: ScanProgress) {
+        _uiState.update {
+            it.copy(
+                duplicates = it.duplicates.copy(
+                    scan = it.duplicates.scan.copy(
+                        scannedFiles = progress.scannedFiles,
+                        currentPath = progress.currentPath
+                    )
+                )
+            )
+        }
+    }
+
     private fun emitMessage(messageRes: Int) {
         _messages.tryEmit(getApplication<Application>().getString(messageRes))
     }
@@ -401,5 +1143,29 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         is SecurityException -> permissionMessage()
         else -> error.message?.takeIf { it.isNotBlank() }
             ?: getApplication<Application>().getString(R.string.operation_failed)
+    }
+
+    private fun networkError(error: Throwable): String {
+        val detail = error.message.orEmpty().lowercase()
+        return when {
+            detail.contains("401") || detail.contains("unauthorized") ->
+                getApplication<Application>().getString(R.string.network_auth_failed)
+            detail.contains("timeout") || detail.contains("timed out") ->
+                getApplication<Application>().getString(R.string.network_timeout)
+            else -> getApplication<Application>().getString(R.string.network_connection_failed)
+        }
+    }
+
+    private fun ExplorerFile.toReference(lastAccessed: Long? = null): FileReference = FileReference(
+        path = path,
+        name = name,
+        isDirectory = isDirectory,
+        kind = kind,
+        mimeType = mimeType,
+        lastAccessedEpochMillis = lastAccessed
+    )
+
+    private companion object {
+        const val MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
     }
 }

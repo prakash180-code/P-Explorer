@@ -28,21 +28,22 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -68,6 +69,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -76,18 +78,23 @@ import androidx.compose.ui.unit.dp
 import com.prakash.pexplorer.R
 import com.prakash.pexplorer.core.util.formatBytes
 import com.prakash.pexplorer.core.util.formatModifiedDate
+import com.prakash.pexplorer.core.util.displayFileName
 import com.prakash.pexplorer.domain.model.ExplorerFile
 import com.prakash.pexplorer.domain.model.FileOperation
+import com.prakash.pexplorer.domain.model.SortOrder
 import com.prakash.pexplorer.domain.model.ViewMode
 import com.prakash.pexplorer.presentation.BrowserUiState
 import com.prakash.pexplorer.presentation.PropertiesUiState
 import com.prakash.pexplorer.presentation.TransferUiState
 import com.prakash.pexplorer.presentation.components.DeleteConfirmationDialog
+import com.prakash.pexplorer.presentation.components.ExtractDialog
 import com.prakash.pexplorer.presentation.components.FileVisual
 import com.prakash.pexplorer.presentation.components.NameDialog
 import com.prakash.pexplorer.presentation.components.PropertiesDialog
 import com.prakash.pexplorer.presentation.components.TransferDestinationDialog
 import com.prakash.pexplorer.presentation.components.TransferProgressDialog
+import com.prakash.pexplorer.presentation.components.SortDialog
+import com.prakash.pexplorer.presentation.components.ZipNameDialog
 import java.io.File
 
 @Composable
@@ -96,6 +103,10 @@ fun FileBrowserScreen(
     rootPath: String,
     rootLabel: String,
     viewMode: ViewMode,
+    sortOrder: SortOrder,
+    foldersFirst: Boolean,
+    showFileExtensions: Boolean,
+    confirmBeforeDelete: Boolean,
     storageAccessGranted: Boolean,
     onNavigateBack: () -> Unit,
     onNavigateUp: () -> Boolean,
@@ -107,12 +118,18 @@ fun FileBrowserScreen(
     onToggleSelection: (String) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
+    onSortOrderChanged: (SortOrder) -> Unit,
+    onFoldersFirstChanged: (Boolean) -> Unit,
     onCreateFolder: (String) -> Unit,
     onRename: (String, String) -> Unit,
     onDelete: (List<String>) -> Unit,
     onCopy: (List<String>, String) -> Unit,
     onMove: (List<String>, String) -> Unit,
+    onCompress: (List<String>, String) -> Unit,
+    onExtract: (String, Boolean) -> Unit,
     onShare: (List<ExplorerFile>) -> Unit,
+    onToggleFavorite: (ExplorerFile) -> Unit,
+    isFavorite: (String) -> Boolean,
     onShowProperties: (String) -> Unit,
     transfer: TransferUiState?,
     properties: PropertiesUiState?,
@@ -132,6 +149,9 @@ fun FileBrowserScreen(
     var renameTarget by remember { mutableStateOf<ExplorerFile?>(null) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var transferOperation by remember { mutableStateOf<FileOperation?>(null) }
+    var showSortDialog by remember { mutableStateOf(false) }
+    var showZipNameDialog by remember { mutableStateOf(false) }
+    var extractTarget by remember { mutableStateOf<ExplorerFile?>(null) }
     LaunchedEffect(initiallyShowCreateFolder) {
         if (initiallyShowCreateFolder) {
             showCreateFolder = true
@@ -156,15 +176,29 @@ fun FileBrowserScreen(
                 rootLabel = rootLabel,
                 selectionMode = selectionMode,
                 selectedCount = selectedFiles.size,
+                selectedFavorite = selectedFiles.singleOrNull()?.path?.let(isFavorite) == true,
                 viewMode = viewMode,
                 onBack = navigateBackOrUp,
                 onViewModeChanged = onViewModeChanged,
                 onRefresh = onRefresh,
                 onClearSelection = onClearSelection,
+                onSort = { showSortDialog = true },
                 onShare = { onShare(selectedFiles) },
                 onCopy = { transferOperation = FileOperation.COPY },
                 onMove = { transferOperation = FileOperation.MOVE },
-                onDelete = { showDeleteConfirmation = true },
+                onDelete = {
+                    if (confirmBeforeDelete) {
+                        showDeleteConfirmation = true
+                    } else {
+                        onDelete(selectedFiles.map(ExplorerFile::path))
+                    }
+                },
+                onToggleFavorite = {
+                    selectedFiles.singleOrNull()?.let(onToggleFavorite)
+                },
+                selectedIsArchive = selectedFiles.singleOrNull()?.name?.endsWith(".zip", ignoreCase = true) == true,
+                onCompress = { showZipNameDialog = true },
+                onExtract = { extractTarget = selectedFiles.singleOrNull() },
                 onSelectAll = onSelectAll,
                 onCreateFolder = { showCreateFolder = true },
                 onRename = { renameTarget = selectedFiles.singleOrNull() },
@@ -206,6 +240,7 @@ fun FileBrowserScreen(
             BrowserContent(
                 browserState = browserState,
                 viewMode = viewMode,
+                showFileExtensions = showFileExtensions,
                 storageAccessGranted = storageAccessGranted,
                 onOpenFile = onOpenFile,
                 onToggleSelection = onToggleSelection,
@@ -278,6 +313,41 @@ fun FileBrowserScreen(
     properties?.let { state ->
         PropertiesDialog(state = state, onDismiss = onDismissProperties)
     }
+
+    if (showSortDialog) {
+        SortDialog(
+            sortOrder = sortOrder,
+            foldersFirst = foldersFirst,
+            onSortOrderChanged = onSortOrderChanged,
+            onFoldersFirstChanged = onFoldersFirstChanged,
+            onDismiss = { showSortDialog = false }
+        )
+    }
+
+    if (showZipNameDialog) {
+        ZipNameDialog(
+            onDismiss = { showZipNameDialog = false },
+            onConfirm = { archiveName ->
+                showZipNameDialog = false
+                onCompress(selectedFiles.map(ExplorerFile::path), archiveName)
+            }
+        )
+    }
+
+    extractTarget?.let { archive ->
+        ExtractDialog(
+            archiveName = archive.name,
+            onDismiss = { extractTarget = null },
+            onExtractHere = {
+                extractTarget = null
+                onExtract(archive.path, false)
+            },
+            onExtractToNewFolder = {
+                extractTarget = null
+                onExtract(archive.path, true)
+            }
+        )
+    }
 }
 
 @Composable
@@ -287,15 +357,21 @@ private fun BrowserTopBar(
     rootLabel: String,
     selectionMode: Boolean,
     selectedCount: Int,
+    selectedFavorite: Boolean,
+    selectedIsArchive: Boolean,
     viewMode: ViewMode,
     onBack: () -> Unit,
     onViewModeChanged: (ViewMode) -> Unit,
     onRefresh: () -> Unit,
     onClearSelection: () -> Unit,
+    onSort: () -> Unit,
     onShare: () -> Unit,
     onCopy: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onCompress: () -> Unit,
+    onExtract: () -> Unit,
     onSelectAll: () -> Unit,
     onCreateFolder: () -> Unit,
     onRename: () -> Unit,
@@ -416,6 +492,41 @@ private fun BrowserTopBar(
                                     onShowProperties()
                                 }
                             )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (selectedFavorite) {
+                                                R.string.remove_from_favorites
+                                            } else {
+                                                R.string.add_to_favorites
+                                            }
+                                        )
+                                    )
+                                },
+                                onClick = {
+                                    moreExpanded = false
+                                    onToggleFavorite()
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.compress)) },
+                            leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null) },
+                            onClick = {
+                                moreExpanded = false
+                                onCompress()
+                            }
+                        )
+                        if (selectedIsArchive && selectedCount == 1) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.extract)) },
+                                leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null) },
+                                onClick = {
+                                    moreExpanded = false
+                                    onExtract()
+                                }
+                            )
                         }
                     } else {
                         DropdownMenuItem(
@@ -436,6 +547,14 @@ private fun BrowserTopBar(
                                 }
                             )
                         }
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.sort_by)) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null) },
+                            onClick = {
+                                moreExpanded = false
+                                onSort()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.refresh)) },
                             leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
@@ -530,6 +649,7 @@ private fun buildBreadcrumbs(
 private fun BrowserContent(
     browserState: BrowserUiState,
     viewMode: ViewMode,
+    showFileExtensions: Boolean,
     storageAccessGranted: Boolean,
     onOpenFile: (ExplorerFile) -> Unit,
     onToggleSelection: (String) -> Unit,
@@ -557,6 +677,7 @@ private fun BrowserContent(
                 items(browserState.items, key = { it.path }) { file ->
                     FileGridItem(
                         file = file,
+                        showFileExtensions = showFileExtensions,
                         selectionMode = browserState.selectedPaths.isNotEmpty(),
                         isSelected = file.path in browserState.selectedPaths,
                         onOpenDirectory = onOpenDirectory,
@@ -574,6 +695,7 @@ private fun BrowserContent(
                 items(browserState.items, key = { it.path }) { file ->
                     FileListItem(
                         file = file,
+                        showFileExtensions = showFileExtensions,
                         selectionMode = browserState.selectedPaths.isNotEmpty(),
                         isSelected = file.path in browserState.selectedPaths,
                         onOpenDirectory = onOpenDirectory,
@@ -692,6 +814,7 @@ private fun EmptyFolder() {
 @Composable
 private fun FileListItem(
     file: ExplorerFile,
+    showFileExtensions: Boolean,
     selectionMode: Boolean,
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
@@ -722,6 +845,7 @@ private fun FileListItem(
                     MaterialTheme.colorScheme.background
                 }
             )
+            .alpha(if (file.isHidden) 0.62f else 1f)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -733,7 +857,7 @@ private fun FileListItem(
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = file.name,
+                text = displayFileName(file, showFileExtensions),
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -762,6 +886,7 @@ private fun FileListItem(
 @Composable
 private fun FileGridItem(
     file: ExplorerFile,
+    showFileExtensions: Boolean,
     selectionMode: Boolean,
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
@@ -780,7 +905,7 @@ private fun FileGridItem(
                 }
             },
             onLongClick = { onToggleSelection(file.path) }
-        ),
+        ).alpha(if (file.isHidden) 0.62f else 1f),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) {
@@ -800,7 +925,7 @@ private fun FileGridItem(
             )
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = file.name,
+                text = displayFileName(file, showFileExtensions),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

@@ -2,6 +2,7 @@ package com.prakash.pexplorer.core.util
 
 import android.text.format.DateUtils
 import java.util.Locale
+import com.prakash.pexplorer.domain.model.ExplorerFile
 
 fun formatBytes(bytes: Long): String {
     if (bytes < 1024L) return "$bytes B"
@@ -27,3 +28,9 @@ fun formatModifiedDate(epochMillis: Long?): String =
             DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_YEAR
         )
     } ?: ""
+
+fun displayFileName(file: ExplorerFile, showExtensions: Boolean): String {
+    if (showExtensions || file.isDirectory) return file.name
+    val dotIndex = file.name.lastIndexOf('.')
+    return if (dotIndex > 0) file.name.substring(0, dotIndex) else file.name
+}

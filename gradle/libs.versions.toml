@@ -8,6 +8,7 @@ navigationCompose = "2.9.0"
 composeBom = "2025.06.01"
 coil = "2.7.0"
 coroutines = "1.9.0"
+datastore = "1.1.7"
 junit = "4.13.2"
 
 [libraries]
@@ -28,6 +29,8 @@ compose-material-icons-extended = { group = "androidx.compose.material", name = 
 
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 

@@ -3,7 +3,9 @@ package com.prakash.pexplorer.domain.model
 enum class FileOperation {
     COPY,
     MOVE,
-    DELETE
+    DELETE,
+    COMPRESS,
+    EXTRACT
 }
 
 data class TransferProgress(
