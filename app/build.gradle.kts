@@ -1,5 +1,20 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+val releaseStoreFile = providers.gradleProperty("P_EXPLORER_STORE_FILE").orNull
+    ?: System.getenv("P_EXPLORER_STORE_FILE")
+val releaseStorePassword = providers.gradleProperty("P_EXPLORER_STORE_PASSWORD").orNull
+    ?: System.getenv("P_EXPLORER_STORE_PASSWORD")
+val releaseKeyAlias = providers.gradleProperty("P_EXPLORER_KEY_ALIAS").orNull
+    ?: System.getenv("P_EXPLORER_KEY_ALIAS")
+val releaseKeyPassword = providers.gradleProperty("P_EXPLORER_KEY_PASSWORD").orNull
+    ?: System.getenv("P_EXPLORER_KEY_PASSWORD")
+val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -21,9 +36,23 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseSigningConfigured) {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

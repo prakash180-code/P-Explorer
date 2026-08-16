@@ -71,8 +71,9 @@ Generated APKs are written to:
 - `app/build/outputs/apk/debug/app-debug.apk`
 - `app/build/outputs/apk/release/app-release-unsigned.apk`
 
-The release build is currently unsigned and has minification disabled while
-the feature set is still being stabilized.
+The release build is unsigned unless release signing variables are supplied.
+See [`RELEASE.md`](RELEASE.md) for keystore setup and publishing checks.
+Minification remains disabled while the feature set is being stabilized.
 
 ## Architecture
 

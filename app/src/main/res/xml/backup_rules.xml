@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- File metadata references are device-specific and should not be restored elsewhere. -->
+    <exclude domain="file" path="datastore/" />
+</full-backup-content>
