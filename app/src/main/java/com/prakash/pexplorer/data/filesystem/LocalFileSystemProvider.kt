@@ -754,12 +754,17 @@ class LocalFileSystemProvider(
     private fun toExplorerFile(file: File): ExplorerFile {
         val extension = file.extension.lowercase(Locale.ROOT)
         val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+        val attributes = runCatching {
+            Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+        }.getOrNull()
         return ExplorerFile(
             path = file.absolutePath,
             name = file.name,
             isDirectory = file.isDirectory,
-            sizeBytes = if (file.isFile) file.length() else 0L,
-            modifiedEpochMillis = file.lastModified().takeIf { it > 0L },
+            sizeBytes = if (file.isFile) (attributes?.size() ?: file.length()) else 0L,
+            modifiedEpochMillis = attributes?.lastModifiedTime()?.toMillis()
+                ?: file.lastModified().takeIf { it > 0L },
+            createdEpochMillis = attributes?.creationTime()?.toMillis()?.takeIf { it > 0L },
             mimeType = mimeType,
             kind = fileKind(file, extension, mimeType)
         )

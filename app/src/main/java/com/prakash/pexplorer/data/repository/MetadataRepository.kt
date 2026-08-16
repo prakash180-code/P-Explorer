@@ -5,7 +5,7 @@ import com.prakash.pexplorer.domain.model.ExplorerPreferences
 import com.prakash.pexplorer.domain.model.FileReference
 import com.prakash.pexplorer.domain.model.SortOrder
 import com.prakash.pexplorer.domain.model.ThemeMode
-import com.prakash.pexplorer.domain.model.ViewMode
+import com.prakash.pexplorer.domain.model.ViewStyle
 import kotlinx.coroutines.flow.Flow
 
 class MetadataRepository(
@@ -13,7 +13,7 @@ class MetadataRepository(
 ) {
     val preferences: Flow<ExplorerPreferences> = store.preferences
 
-    suspend fun setViewMode(viewMode: ViewMode) = store.setViewMode(viewMode)
+    suspend fun setViewMode(viewStyle: ViewStyle) = store.setViewMode(viewStyle)
     suspend fun setSortOrder(sortOrder: SortOrder) = store.setSortOrder(sortOrder)
     suspend fun setFoldersFirst(enabled: Boolean) = store.setFoldersFirst(enabled)
     suspend fun setShowHiddenFiles(enabled: Boolean) = store.setShowHiddenFiles(enabled)

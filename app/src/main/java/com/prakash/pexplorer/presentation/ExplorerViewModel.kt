@@ -28,7 +28,7 @@ import com.prakash.pexplorer.domain.model.StorageAnalysis
 import com.prakash.pexplorer.domain.model.StorageInfo
 import com.prakash.pexplorer.domain.model.ThemeMode
 import com.prakash.pexplorer.domain.model.TransferProgress
-import com.prakash.pexplorer.domain.model.ViewMode
+import com.prakash.pexplorer.domain.model.ViewStyle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -123,7 +123,7 @@ data class ExplorerUiState(
     val storageLoading: Boolean = true,
     val storageError: String? = null,
     val storageAccessGranted: Boolean = false,
-    val viewMode: ViewMode = ViewMode.LIST,
+    val viewStyle: ViewStyle = ViewStyle.LIST,
     val browserRootPath: String,
     val browser: BrowserUiState,
     val transfer: TransferUiState? = null,
@@ -269,9 +269,22 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         return true
     }
 
-    fun setViewMode(viewMode: ViewMode) {
-        _uiState.update { it.copy(viewMode = viewMode) }
-        viewModelScope.launch { metadataRepository.setViewMode(viewMode) }
+    fun setViewStyle(viewStyle: ViewStyle) {
+        _uiState.update { it.copy(viewStyle = viewStyle) }
+        viewModelScope.launch { metadataRepository.setViewMode(viewStyle) }
+    }
+
+    fun setViewSettings(
+        viewStyle: ViewStyle,
+        sortOrder: SortOrder,
+        foldersFirst: Boolean
+    ) {
+        _uiState.update { it.copy(viewStyle = viewStyle) }
+        viewModelScope.launch {
+            metadataRepository.setViewMode(viewStyle)
+            metadataRepository.setSortOrder(sortOrder)
+            metadataRepository.setFoldersFirst(foldersFirst)
+        }
     }
 
     fun setSortOrder(sortOrder: SortOrder) {
@@ -897,7 +910,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 _uiState.update {
                     it.copy(
                         preferences = preferences,
-                        viewMode = preferences.viewMode
+                        viewStyle = preferences.viewStyle
                     )
                 }
                 refreshStoredItems(preferences)

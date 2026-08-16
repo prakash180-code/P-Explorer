@@ -14,7 +14,7 @@ import com.prakash.pexplorer.domain.model.FileKind
 import com.prakash.pexplorer.domain.model.FileReference
 import com.prakash.pexplorer.domain.model.SortOrder
 import com.prakash.pexplorer.domain.model.ThemeMode
-import com.prakash.pexplorer.domain.model.ViewMode
+import com.prakash.pexplorer.domain.model.ViewStyle
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -34,8 +34,8 @@ class MetadataStore(context: Context) {
         }
         .map(::toPreferences)
 
-    suspend fun setViewMode(viewMode: ViewMode) = dataStore.edit {
-        it[Keys.VIEW_MODE] = viewMode.name
+    suspend fun setViewMode(viewStyle: ViewStyle) = dataStore.edit {
+        it[Keys.VIEW_MODE] = viewStyle.name
     }
 
     suspend fun setSortOrder(sortOrder: SortOrder) = dataStore.edit {
@@ -119,7 +119,7 @@ class MetadataStore(context: Context) {
     }
 
     private fun toPreferences(preferences: Preferences): ExplorerPreferences = ExplorerPreferences(
-        viewMode = enumValue(preferences[Keys.VIEW_MODE], ViewMode.LIST),
+        viewStyle = enumValue(preferences[Keys.VIEW_MODE], ViewStyle.LIST),
         sortOrder = enumValue(preferences[Keys.SORT_ORDER], SortOrder.NAME_ASC),
         foldersFirst = preferences[Keys.FOLDERS_FIRST] ?: true,
         showHiddenFiles = preferences[Keys.SHOW_HIDDEN] ?: false,

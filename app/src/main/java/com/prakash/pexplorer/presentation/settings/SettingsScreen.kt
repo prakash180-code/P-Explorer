@@ -36,8 +36,9 @@ import com.prakash.pexplorer.domain.model.ExplorerPreferences
 import com.prakash.pexplorer.domain.model.SortOrder
 import com.prakash.pexplorer.domain.model.StorageInfo
 import com.prakash.pexplorer.domain.model.ThemeMode
-import com.prakash.pexplorer.domain.model.ViewMode
+import com.prakash.pexplorer.domain.model.ViewStyle
 import com.prakash.pexplorer.core.util.formatBytes
+import com.prakash.pexplorer.presentation.browser.ViewSettingsDialog
 
 private enum class SettingsChoice {
     THEME,
@@ -52,7 +53,7 @@ fun SettingsScreen(
     storage: List<StorageInfo>,
     onBack: () -> Unit,
     onThemeModeChanged: (ThemeMode) -> Unit,
-    onViewModeChanged: (ViewMode) -> Unit,
+    onViewModeChanged: (ViewStyle) -> Unit,
     onSortOrderChanged: (SortOrder) -> Unit,
     onFoldersFirstChanged: (Boolean) -> Unit,
     onShowHiddenChanged: (Boolean) -> Unit,
@@ -98,7 +99,7 @@ fun SettingsScreen(
             item {
                 SettingsRow(
                     title = stringResource(R.string.default_view),
-                    summary = viewLabel(preferences.viewMode),
+                    summary = viewStyleLabel(preferences.viewStyle),
                     onClick = { choice = SettingsChoice.VIEW }
                 )
             }
@@ -180,16 +181,17 @@ fun SettingsScreen(
             },
             onDismiss = { choice = null }
         )
-        SettingsChoice.VIEW -> ChoiceDialog(
-            title = stringResource(R.string.default_view),
-            selected = preferences.viewMode,
-            options = ViewMode.entries,
-            label = ::viewLabel,
-            onSelected = {
-                onViewModeChanged(it)
+        SettingsChoice.VIEW -> ViewSettingsDialog(
+            initialStyle = preferences.viewStyle,
+            initialSortOrder = preferences.sortOrder,
+            initialFoldersFirst = preferences.foldersFirst,
+            onDismiss = { choice = null },
+            onApply = { style, sort, folders ->
+                onViewModeChanged(style)
+                onSortOrderChanged(sort)
+                onFoldersFirstChanged(folders)
                 choice = null
-            },
-            onDismiss = { choice = null }
+            }
         )
         SettingsChoice.SORT -> ChoiceDialog(
             title = stringResource(R.string.sort_by),
@@ -321,8 +323,21 @@ private fun themeLabel(mode: ThemeMode): String = stringResource(
 )
 
 @Composable
-private fun viewLabel(viewMode: ViewMode): String = stringResource(
-    if (viewMode == ViewMode.LIST) R.string.list_view else R.string.grid_view
+private fun viewStyleLabel(viewStyle: ViewStyle): String = stringResource(
+    when (viewStyle) {
+        ViewStyle.SMALL_ICON -> R.string.view_small_icon
+        ViewStyle.MEDIUM_ICON -> R.string.view_medium_icon
+        ViewStyle.LARGE_ICON -> R.string.view_large_icon
+        ViewStyle.LIST -> R.string.view_list
+        ViewStyle.COMPACT_LIST -> R.string.view_compact_list
+        ViewStyle.DETAILED_LIST -> R.string.view_detailed_list
+        ViewStyle.GRID -> R.string.view_grid
+        ViewStyle.TILE -> R.string.view_tile
+        ViewStyle.CARD_VIEW -> R.string.view_card
+        ViewStyle.MASONRY -> R.string.view_masonry
+        ViewStyle.COLUMNS -> R.string.view_columns
+        ViewStyle.GALLERY -> R.string.view_gallery
+    }
 )
 
 @Composable
@@ -330,10 +345,12 @@ private fun sortLabel(sortOrder: SortOrder): String = stringResource(
     when (sortOrder) {
         SortOrder.NAME_ASC -> R.string.name_a_z
         SortOrder.NAME_DESC -> R.string.name_z_a
+        SortOrder.TYPE -> R.string.file_type
+        SortOrder.SIZE_SMALLEST -> R.string.size_smallest
+        SortOrder.SIZE_LARGEST -> R.string.size_largest
         SortOrder.DATE_NEWEST -> R.string.date_newest
         SortOrder.DATE_OLDEST -> R.string.date_oldest
-        SortOrder.SIZE_LARGEST -> R.string.size_largest
-        SortOrder.SIZE_SMALLEST -> R.string.size_smallest
-        SortOrder.TYPE -> R.string.file_type
+        SortOrder.CREATED_NEWEST -> R.string.created_newest
+        SortOrder.CREATED_OLDEST -> R.string.created_oldest
     }
 )

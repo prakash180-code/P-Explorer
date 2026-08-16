@@ -1,7 +1,7 @@
 package com.prakash.pexplorer.domain.model
 
 data class ExplorerPreferences(
-    val viewMode: ViewMode = ViewMode.LIST,
+    val viewStyle: ViewStyle = ViewStyle.LIST,
     val sortOrder: SortOrder = SortOrder.NAME_ASC,
     val foldersFirst: Boolean = true,
     val showHiddenFiles: Boolean = false,

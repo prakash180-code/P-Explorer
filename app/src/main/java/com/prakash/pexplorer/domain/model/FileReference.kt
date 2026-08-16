@@ -15,6 +15,7 @@ fun FileReference.toExplorerFile(): ExplorerFile = ExplorerFile(
     isDirectory = isDirectory,
     sizeBytes = 0L,
     modifiedEpochMillis = null,
+    createdEpochMillis = null,
     mimeType = mimeType,
     kind = kind
 )

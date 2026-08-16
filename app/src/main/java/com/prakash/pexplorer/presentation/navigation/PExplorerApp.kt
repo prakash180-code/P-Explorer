@@ -142,7 +142,7 @@ fun PExplorerApp(
                         .firstOrNull { it.path == uiState.browserRootPath }
                         ?.label
                         ?: stringResource(R.string.internal_storage),
-                    viewMode = uiState.viewMode,
+                    viewStyle = uiState.viewStyle,
                     sortOrder = uiState.preferences.sortOrder,
                     foldersFirst = uiState.preferences.foldersFirst,
                     showFileExtensions = uiState.preferences.showFileExtensions,
@@ -154,14 +154,13 @@ fun PExplorerApp(
                     onOpenFile = { file ->
                         openExplorerFile(file)
                     },
-                    onViewModeChanged = viewModel::setViewMode,
+                    onOpenSearch = { navController.navigate(SEARCH_ROUTE) },
                     onRefresh = viewModel::refresh,
                     onRequestStorageAccess = onRequestStorageAccess,
                     onToggleSelection = viewModel::toggleSelection,
                     onSelectAll = viewModel::selectAll,
                     onClearSelection = viewModel::clearSelection,
-                    onSortOrderChanged = viewModel::setSortOrder,
-                    onFoldersFirstChanged = viewModel::setFoldersFirst,
+                    onApplyViewSettings = viewModel::setViewSettings,
                     onCreateFolder = viewModel::createFolder,
                     onRename = viewModel::rename,
                     onDelete = viewModel::delete,
@@ -291,7 +290,7 @@ fun PExplorerApp(
                             storage = uiState.storage,
                             onBack = { navController.popBackStack() },
                             onThemeModeChanged = viewModel::setThemeMode,
-                            onViewModeChanged = viewModel::setViewMode,
+                            onViewModeChanged = viewModel::setViewStyle,
                             onSortOrderChanged = viewModel::setSortOrder,
                             onFoldersFirstChanged = viewModel::setFoldersFirst,
                             onShowHiddenChanged = viewModel::setShowHiddenFiles,

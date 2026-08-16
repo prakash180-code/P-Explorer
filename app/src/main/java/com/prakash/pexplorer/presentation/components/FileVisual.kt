@@ -107,14 +107,14 @@ fun fileIcon(kind: FileKind): ImageVector = when (kind) {
 @Composable
 fun fileTint(kind: FileKind): Color = when (kind) {
     FileKind.FOLDER -> MaterialTheme.colorScheme.primary
-    FileKind.IMAGE -> Color(0xFF5D76C7)
+    FileKind.IMAGE -> Color(0xFF4F8EF7)
     FileKind.VIDEO -> Color(0xFF8E62B1)
     FileKind.AUDIO -> MaterialTheme.colorScheme.tertiary
     FileKind.PDF -> MaterialTheme.colorScheme.error
     FileKind.DOCUMENT, FileKind.TEXT -> MaterialTheme.colorScheme.secondary
     FileKind.SPREADSHEET -> Color(0xFF3D8B6D)
-    FileKind.PRESENTATION -> Color(0xFFC27047)
-    FileKind.ARCHIVE -> Color(0xFF9B713B)
-    FileKind.APK -> Color(0xFF4C8A5D)
+    FileKind.PRESENTATION -> Color(0xFFF57C00)
+    FileKind.ARCHIVE -> Color(0xFFF57C00)
+    FileKind.APK -> Color(0xFF3D8B6D)
     FileKind.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
 }

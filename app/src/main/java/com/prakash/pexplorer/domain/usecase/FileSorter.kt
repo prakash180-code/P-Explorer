@@ -23,6 +23,8 @@ object FileSorter {
             SortOrder.NAME_DESC -> folderComparator.thenByDescending { it.name.lowercase(Locale.ROOT) }
             SortOrder.DATE_NEWEST -> folderComparator.thenByDescending { it.modifiedEpochMillis ?: Long.MIN_VALUE }
             SortOrder.DATE_OLDEST -> folderComparator.thenBy { it.modifiedEpochMillis ?: Long.MAX_VALUE }
+            SortOrder.CREATED_NEWEST -> folderComparator.thenByDescending { it.createdEpochMillis ?: Long.MIN_VALUE }
+            SortOrder.CREATED_OLDEST -> folderComparator.thenBy { it.createdEpochMillis ?: Long.MAX_VALUE }
             SortOrder.SIZE_LARGEST -> folderComparator.thenByDescending { it.sizeBytes }
             SortOrder.SIZE_SMALLEST -> folderComparator.thenBy { it.sizeBytes }
             SortOrder.TYPE -> folderComparator

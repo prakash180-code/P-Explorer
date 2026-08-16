@@ -11,6 +11,7 @@
     <string name="storage_error">We could not read storage information.</string>
     <string name="used_of_total">%1$s used of %2$s</string>
     <string name="free_space">%1$s free</string>
+    <string name="free_percent">%1$d%%</string>
     <string name="no_storage_found">No accessible storage found.</string>
     <string name="home_tagline">A calm place for every file.</string>
     <string name="quick_actions">Quick actions</string>
@@ -39,8 +40,6 @@
     <string name="empty_folder_description">Files and folders added here will appear in this space.</string>
     <string name="could_not_open_folder">Could not open this folder.</string>
     <string name="try_again">Try again</string>
-    <string name="list_view">List view</string>
-    <string name="grid_view">Grid view</string>
     <string name="refresh">Refresh</string>
     <string name="feature_title_recent">Recent files</string>
     <string name="feature_title_favorites">Favorites</string>
@@ -213,4 +212,22 @@
     <string name="network_root">P-Hub storage</string>
     <string name="network_empty_folder">This network folder is empty.</string>
     <string name="network_protocol_note">P-Hub protocol: local Wi-Fi, port 8080.</string>
+    <string name="view_options">View</string>
+    <string name="view_style_section">View Style</string>
+    <string name="sort_by_section">Sort By</string>
+    <string name="apply">Apply</string>
+    <string name="view_small_icon">Small icon</string>
+    <string name="view_medium_icon">Medium icon</string>
+    <string name="view_large_icon">Large icon</string>
+    <string name="view_list">List</string>
+    <string name="view_compact_list">Compact list</string>
+    <string name="view_detailed_list">Detailed list</string>
+    <string name="view_grid">Grid</string>
+    <string name="view_tile">Tile</string>
+    <string name="view_card">Card</string>
+    <string name="view_masonry">Masonry</string>
+    <string name="view_columns">Columns</string>
+    <string name="view_gallery">Gallery</string>
+    <string name="created_newest">Created (newest first)</string>
+    <string name="created_oldest">Created (oldest first)</string>
 </resources>

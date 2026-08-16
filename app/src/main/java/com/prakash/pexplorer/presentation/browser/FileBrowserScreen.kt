@@ -1,6 +1,7 @@
-package com.prakash.pexplorer.presentation.browser
+﻿package com.prakash.pexplorer.presentation.browser
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -22,13 +23,15 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ChevronRight
@@ -41,9 +44,10 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -82,7 +86,7 @@ import com.prakash.pexplorer.core.util.displayFileName
 import com.prakash.pexplorer.domain.model.ExplorerFile
 import com.prakash.pexplorer.domain.model.FileOperation
 import com.prakash.pexplorer.domain.model.SortOrder
-import com.prakash.pexplorer.domain.model.ViewMode
+import com.prakash.pexplorer.domain.model.ViewStyle
 import com.prakash.pexplorer.presentation.BrowserUiState
 import com.prakash.pexplorer.presentation.PropertiesUiState
 import com.prakash.pexplorer.presentation.TransferUiState
@@ -93,7 +97,6 @@ import com.prakash.pexplorer.presentation.components.NameDialog
 import com.prakash.pexplorer.presentation.components.PropertiesDialog
 import com.prakash.pexplorer.presentation.components.TransferDestinationDialog
 import com.prakash.pexplorer.presentation.components.TransferProgressDialog
-import com.prakash.pexplorer.presentation.components.SortDialog
 import com.prakash.pexplorer.presentation.components.ZipNameDialog
 import java.io.File
 
@@ -102,7 +105,7 @@ fun FileBrowserScreen(
     browserState: BrowserUiState,
     rootPath: String,
     rootLabel: String,
-    viewMode: ViewMode,
+    viewStyle: ViewStyle,
     sortOrder: SortOrder,
     foldersFirst: Boolean,
     showFileExtensions: Boolean,
@@ -112,14 +115,13 @@ fun FileBrowserScreen(
     onNavigateUp: () -> Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onViewModeChanged: (ViewMode) -> Unit,
+    onOpenSearch: () -> Unit,
     onRefresh: () -> Unit,
     onRequestStorageAccess: () -> Unit,
     onToggleSelection: (String) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
-    onSortOrderChanged: (SortOrder) -> Unit,
-    onFoldersFirstChanged: (Boolean) -> Unit,
+    onApplyViewSettings: (ViewStyle, SortOrder, Boolean) -> Unit,
     onCreateFolder: (String) -> Unit,
     onRename: (String, String) -> Unit,
     onDelete: (List<String>) -> Unit,
@@ -149,7 +151,7 @@ fun FileBrowserScreen(
     var renameTarget by remember { mutableStateOf<ExplorerFile?>(null) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var transferOperation by remember { mutableStateOf<FileOperation?>(null) }
-    var showSortDialog by remember { mutableStateOf(false) }
+    var showViewDialog by remember { mutableStateOf(false) }
     var showZipNameDialog by remember { mutableStateOf(false) }
     var extractTarget by remember { mutableStateOf<ExplorerFile?>(null) }
     LaunchedEffect(initiallyShowCreateFolder) {
@@ -177,12 +179,12 @@ fun FileBrowserScreen(
                 selectionMode = selectionMode,
                 selectedCount = selectedFiles.size,
                 selectedFavorite = selectedFiles.singleOrNull()?.path?.let(isFavorite) == true,
-                viewMode = viewMode,
+                viewStyle = viewStyle,
                 onBack = navigateBackOrUp,
-                onViewModeChanged = onViewModeChanged,
+                onOpenViewSettings = { showViewDialog = true },
+                onOpenSearch = onOpenSearch,
                 onRefresh = onRefresh,
                 onClearSelection = onClearSelection,
-                onSort = { showSortDialog = true },
                 onShare = { onShare(selectedFiles) },
                 onCopy = { transferOperation = FileOperation.COPY },
                 onMove = { transferOperation = FileOperation.MOVE },
@@ -216,7 +218,9 @@ fun FileBrowserScreen(
         floatingActionButton = {
             if (!selectionMode && transfer == null) {
                 androidx.compose.material3.SmallFloatingActionButton(
-                    onClick = { showCreateFolder = true }
+                    onClick = { showCreateFolder = true },
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary
                 ) {
                     Icon(
                         imageVector = Icons.Filled.CreateNewFolder,
@@ -239,7 +243,7 @@ fun FileBrowserScreen(
             )
             BrowserContent(
                 browserState = browserState,
-                viewMode = viewMode,
+                viewStyle = viewStyle,
                 showFileExtensions = showFileExtensions,
                 storageAccessGranted = storageAccessGranted,
                 onOpenFile = onOpenFile,
@@ -314,13 +318,16 @@ fun FileBrowserScreen(
         PropertiesDialog(state = state, onDismiss = onDismissProperties)
     }
 
-    if (showSortDialog) {
-        SortDialog(
-            sortOrder = sortOrder,
-            foldersFirst = foldersFirst,
-            onSortOrderChanged = onSortOrderChanged,
-            onFoldersFirstChanged = onFoldersFirstChanged,
-            onDismiss = { showSortDialog = false }
+    if (showViewDialog) {
+        ViewSettingsDialog(
+            initialStyle = viewStyle,
+            initialSortOrder = sortOrder,
+            initialFoldersFirst = foldersFirst,
+            onDismiss = { showViewDialog = false },
+            onApply = { style, sort, folders ->
+                showViewDialog = false
+                onApplyViewSettings(style, sort, folders)
+            }
         )
     }
 
@@ -359,12 +366,12 @@ private fun BrowserTopBar(
     selectedCount: Int,
     selectedFavorite: Boolean,
     selectedIsArchive: Boolean,
-    viewMode: ViewMode,
+    viewStyle: ViewStyle,
     onBack: () -> Unit,
-    onViewModeChanged: (ViewMode) -> Unit,
+    onOpenViewSettings: () -> Unit,
+    onOpenSearch: () -> Unit,
     onRefresh: () -> Unit,
     onClearSelection: () -> Unit,
-    onSort: () -> Unit,
     onShare: () -> Unit,
     onCopy: () -> Unit,
     onMove: () -> Unit,
@@ -422,18 +429,21 @@ private fun BrowserTopBar(
                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
                 }
             } else {
-                IconButton(
-                    onClick = {
-                        onViewModeChanged(
-                            if (viewMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
-                        )
-                    }
-                ) {
+                IconButton(onClick = onOpenSearch) {
                     Icon(
-                        imageVector = if (viewMode == ViewMode.LIST) Icons.Filled.GridView else Icons.AutoMirrored.Filled.ViewList,
-                        contentDescription = stringResource(
-                            if (viewMode == ViewMode.LIST) R.string.grid_view else R.string.list_view
-                        )
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = stringResource(R.string.search)
+                    )
+                }
+                IconButton(onClick = onOpenViewSettings) {
+                    Icon(
+                        imageVector = if (isListFamily(viewStyle)) {
+                            Icons.Filled.GridView
+                        } else {
+                            Icons.AutoMirrored.Filled.ViewList
+                        },
+                        contentDescription = stringResource(R.string.view_options),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
                 IconButton(onClick = onRefresh) {
@@ -558,11 +568,11 @@ private fun BrowserTopBar(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.sort_by)) },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null) },
+                            text = { Text(stringResource(R.string.view_options)) },
+                            leadingIcon = { Icon(Icons.Filled.Tune, contentDescription = null) },
                             onClick = {
                                 moreExpanded = false
-                                onSort()
+                                onOpenViewSettings()
                             }
                         )
                         DropdownMenuItem(
@@ -656,9 +666,10 @@ private fun buildBreadcrumbs(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun BrowserContent(
     browserState: BrowserUiState,
-    viewMode: ViewMode,
+    viewStyle: ViewStyle,
     showFileExtensions: Boolean,
     storageAccessGranted: Boolean,
     onOpenFile: (ExplorerFile) -> Unit,
@@ -676,43 +687,51 @@ private fun BrowserContent(
             onRequestStorageAccess = onRequestStorageAccess
         )
         browserState.items.isEmpty() -> EmptyFolder()
-        viewMode == ViewMode.GRID -> {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 148.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(browserState.items, key = { it.path }) { file ->
-                    FileGridItem(
-                        file = file,
-                        showFileExtensions = showFileExtensions,
-                        selectionMode = browserState.selectedPaths.isNotEmpty(),
-                        isSelected = file.path in browserState.selectedPaths,
-                        onOpenDirectory = onOpenDirectory,
-                        onOpenFile = onOpenFile,
-                        onToggleSelection = onToggleSelection
-                    )
-                }
-            }
-        }
-        else -> {
+        isListFamily(viewStyle) -> {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 items(browserState.items, key = { it.path }) { file ->
-                    FileListItem(
-                        file = file,
-                        showFileExtensions = showFileExtensions,
-                        selectionMode = browserState.selectedPaths.isNotEmpty(),
-                        isSelected = file.path in browserState.selectedPaths,
-                        onOpenDirectory = onOpenDirectory,
-                        onOpenFile = onOpenFile,
-                        onToggleSelection = onToggleSelection
-                    )
-                    if (file != browserState.items.last()) {
+                    when (viewStyle) {
+                        ViewStyle.COMPACT_LIST -> CompactRowItem(
+                            file,
+                            showFileExtensions,
+                            browserState.selectedPaths.isNotEmpty(),
+                            file.path in browserState.selectedPaths,
+                            onOpenDirectory,
+                            onOpenFile,
+                            onToggleSelection
+                        )
+                        ViewStyle.DETAILED_LIST -> DetailedRowItem(
+                            file,
+                            showFileExtensions,
+                            browserState.selectedPaths.isNotEmpty(),
+                            file.path in browserState.selectedPaths,
+                            onOpenDirectory,
+                            onOpenFile,
+                            onToggleSelection
+                        )
+                        ViewStyle.COLUMNS -> NameRowItem(
+                            file,
+                            showFileExtensions,
+                            browserState.selectedPaths.isNotEmpty(),
+                            file.path in browserState.selectedPaths,
+                            onOpenDirectory,
+                            onOpenFile,
+                            onToggleSelection
+                        )
+                        else -> FileListItem(
+                            file = file,
+                            showFileExtensions = showFileExtensions,
+                            selectionMode = browserState.selectedPaths.isNotEmpty(),
+                            isSelected = file.path in browserState.selectedPaths,
+                            onOpenDirectory = onOpenDirectory,
+                            onOpenFile = onOpenFile,
+                            onToggleSelection = onToggleSelection
+                        )
+                    }
+                    if (viewStyle == ViewStyle.LIST && file != browserState.items.last()) {
                         HorizontalDivider(
                             modifier = Modifier.padding(start = 84.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
@@ -721,7 +740,102 @@ private fun BrowserContent(
                 }
             }
         }
+        else -> {
+            val gridColumns = when (viewStyle) {
+                ViewStyle.SMALL_ICON -> 88.dp
+                ViewStyle.MEDIUM_ICON -> 116.dp
+                ViewStyle.LARGE_ICON -> 148.dp
+                ViewStyle.TILE -> 80.dp
+                ViewStyle.CARD_VIEW, ViewStyle.MASONRY -> 180.dp
+                ViewStyle.GALLERY -> 150.dp
+                else -> 148.dp
+            }
+            val gridSpacing = if (viewStyle == ViewStyle.TILE) 4.dp else 12.dp
+            val gridPadding = if (viewStyle == ViewStyle.TILE) {
+                PaddingValues(start = 8.dp, end = 8.dp, bottom = 16.dp)
+            } else {
+                PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)
+            }
+            if (viewStyle == ViewStyle.MASONRY) {
+                LazyVerticalStaggeredGrid(
+                    columns = StaggeredGridCells.Adaptive(gridColumns),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = gridPadding,
+                    horizontalArrangement = Arrangement.spacedBy(gridSpacing),
+                    verticalItemSpacing = gridSpacing
+                ) {
+                    items(browserState.items, key = { it.path }) { file ->
+                        CardViewItem(
+                            file,
+                            showFileExtensions,
+                            browserState.selectedPaths.isNotEmpty(),
+                            file.path in browserState.selectedPaths,
+                            onOpenDirectory,
+                            onOpenFile,
+                            onToggleSelection
+                        )
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = gridColumns),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = gridPadding,
+                    horizontalArrangement = Arrangement.spacedBy(gridSpacing),
+                    verticalArrangement = Arrangement.spacedBy(gridSpacing)
+                ) {
+                    items(browserState.items, key = { it.path }) { file ->
+                        when (viewStyle) {
+                            ViewStyle.SMALL_ICON -> IconGridItem(
+                                file, showFileExtensions, 64.dp, showDetails = false,
+                                browserState.selectedPaths.isNotEmpty(),
+                                file.path in browserState.selectedPaths,
+                                onOpenDirectory, onOpenFile, onToggleSelection
+                            )
+                            ViewStyle.MEDIUM_ICON -> IconGridItem(
+                                file, showFileExtensions, 88.dp, showDetails = false,
+                                browserState.selectedPaths.isNotEmpty(),
+                                file.path in browserState.selectedPaths,
+                                onOpenDirectory, onOpenFile, onToggleSelection
+                            )
+                            ViewStyle.LARGE_ICON -> IconGridItem(
+                                file, showFileExtensions, 118.dp, showDetails = true,
+                                browserState.selectedPaths.isNotEmpty(),
+                                file.path in browserState.selectedPaths,
+                                onOpenDirectory, onOpenFile, onToggleSelection
+                            )
+                            ViewStyle.TILE -> TileItem(
+                                file, showFileExtensions,
+                                browserState.selectedPaths.isNotEmpty(),
+                                file.path in browserState.selectedPaths,
+                                onOpenDirectory, onOpenFile, onToggleSelection
+                            )
+                            ViewStyle.GALLERY -> GalleryItem(
+                                file, showFileExtensions,
+                                browserState.selectedPaths.isNotEmpty(),
+                                file.path in browserState.selectedPaths,
+                                onOpenDirectory, onOpenFile, onToggleSelection
+                            )
+                            else -> FileGridItem(
+                                file = file,
+                                showFileExtensions = showFileExtensions,
+                                selectionMode = browserState.selectedPaths.isNotEmpty(),
+                                isSelected = file.path in browserState.selectedPaths,
+                                onOpenDirectory = onOpenDirectory,
+                                onOpenFile = onOpenFile,
+                                onToggleSelection = onToggleSelection
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+private fun isListFamily(viewStyle: ViewStyle): Boolean = when (viewStyle) {
+    ViewStyle.LIST, ViewStyle.COMPACT_LIST, ViewStyle.DETAILED_LIST, ViewStyle.COLUMNS -> true
+    else -> false
 }
 
 @Composable

@@ -37,16 +37,31 @@ class FileSorterTest {
         assertEquals(listOf("large.txt", "small.txt", "folder"), sorted.map { it.name })
     }
 
+    @Test
+    fun createdSortingOrdersNewestFirst() {
+        val files = listOf(
+            explorerFile("old.txt", createdEpochMillis = 100L),
+            explorerFile("new.txt", createdEpochMillis = 300L),
+            explorerFile("mid.txt", createdEpochMillis = 200L)
+        )
+
+        val sorted = FileSorter.sort(files, SortOrder.CREATED_NEWEST, foldersFirst = false)
+
+        assertEquals(listOf("new.txt", "mid.txt", "old.txt"), sorted.map { it.name })
+    }
+
     private fun explorerFile(
         name: String,
         directory: Boolean = false,
-        sizeBytes: Long = 0L
+        sizeBytes: Long = 0L,
+        createdEpochMillis: Long? = null
     ) = ExplorerFile(
         path = "/storage/emulated/0/$name",
         name = name,
         isDirectory = directory,
         sizeBytes = sizeBytes,
         modifiedEpochMillis = null,
+        createdEpochMillis = createdEpochMillis,
         mimeType = null,
         kind = if (directory) FileKind.FOLDER else FileKind.UNKNOWN
     )

@@ -1,9 +1,11 @@
-package com.prakash.pexplorer.presentation.home
+﻿package com.prakash.pexplorer.presentation.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,8 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
@@ -34,6 +34,7 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -62,6 +63,7 @@ import com.prakash.pexplorer.core.util.formatBytes
 import com.prakash.pexplorer.domain.model.StorageInfo
 import com.prakash.pexplorer.presentation.ExplorerUiState
 import com.prakash.pexplorer.presentation.navigation.UtilityDestination
+import kotlin.math.roundToInt
 
 @Composable
 fun HomeScreen(
@@ -220,12 +222,20 @@ private fun StorageSection(
             )
         }
         else -> {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(end = 8.dp)
-            ) {
-                items(state.storage, key = { it.path }) { storage ->
-                    StorageCard(storage = storage, onClick = { onOpenStorage(storage.path) })
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                state.storage.chunked(2).forEach { rowStorages ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        rowStorages.forEach { storage ->
+                            StorageCard(
+                                storage = storage,
+                                onClick = { onOpenStorage(storage.path) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (rowStorages.size == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
@@ -296,30 +306,43 @@ private fun LoadingStorageCard() {
 @Composable
 private fun StorageCard(
     storage: StorageInfo,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val accent = if (storage.isRemovable) Color(0xFFFF9800) else MaterialTheme.colorScheme.primary
     Card(
         onClick = onClick,
-        modifier = Modifier.width(286.dp),
-        shape = RoundedCornerShape(24.dp),
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         )
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = accent.copy(alpha = 0.14f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Folder,
+                            contentDescription = null,
+                            tint = accent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = storage.label,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(3.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = stringResource(
                             R.string.used_of_total,
@@ -327,27 +350,36 @@ private fun StorageCard(
                             formatBytes(storage.totalBytes)
                         ),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Icon(
-                    imageVector = Icons.Filled.Folder,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
+                Spacer(modifier = Modifier.width(10.dp))
+                val freePercentage = if (storage.totalBytes > 0L) {
+                    (storage.freeBytes.toDouble() / storage.totalBytes * 100).roundToInt()
+                } else {
+                    0
+                }
+                Box(
+                    modifier = Modifier.size(36.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        progress = { storage.usedFraction },
+                        modifier = Modifier.fillMaxSize(),
+                        color = accent,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        strokeWidth = 4.dp
+                    )
+                    Text(
+                        text = stringResource(R.string.free_percent, freePercentage),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(18.dp))
-            LinearProgressIndicator(
-                progress = { storage.usedFraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(50)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surface
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = stringResource(R.string.free_space, formatBytes(storage.freeBytes)),
                 style = MaterialTheme.typography.labelMedium,
@@ -358,63 +390,58 @@ private fun StorageCard(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun QuickActions(
     onOpenSearch: () -> Unit,
     onCreateFolder: () -> Unit,
     onOpenAnalyzer: () -> Unit
 ) {
-    LazyRow(
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(end = 8.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
-            AssistChip(
-                onClick = onOpenSearch,
-                label = { Text(stringResource(R.string.search)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Search,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        AssistChip(
+            onClick = onOpenSearch,
+            label = { Text(stringResource(R.string.search)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
                 )
+            },
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
             )
-        }
-        item {
-            AssistChip(
-                onClick = onCreateFolder,
-                label = { Text(stringResource(R.string.create_folder)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Folder,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        )
+        AssistChip(
+            onClick = onCreateFolder,
+            label = { Text(stringResource(R.string.create_folder)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
                 )
+            },
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
             )
-        }
-        item {
-            AssistChip(
-                onClick = onOpenAnalyzer,
-                label = { Text(stringResource(R.string.storage_analyzer)) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Analytics,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        )
+        AssistChip(
+            onClick = onOpenAnalyzer,
+            label = { Text(stringResource(R.string.storage_analyzer)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Analytics,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
                 )
+            },
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
             )
-        }
+        )
     }
 }
 
@@ -425,23 +452,24 @@ private data class QuickCategory(
 )
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun QuickCategories(onOpenFiles: () -> Unit) {
     val categories = remember {
         listOf(
-            QuickCategory(R.string.images, Icons.Filled.Image, Color(0xFF5D76C7)),
+            QuickCategory(R.string.images, Icons.Filled.Image, Color(0xFF4F8EF7)),
             QuickCategory(R.string.videos, Icons.Filled.Movie, Color(0xFF8E62B1)),
-            QuickCategory(R.string.audio, Icons.Filled.MusicNote, Color(0xFF6C5A7D)),
-            QuickCategory(R.string.documents, Icons.Filled.Description, Color(0xFF4E6268)),
-            QuickCategory(R.string.downloads, Icons.Filled.Download, Color(0xFF17627A)),
-            QuickCategory(R.string.apks, Icons.Filled.Android, Color(0xFF4C8A5D)),
-            QuickCategory(R.string.archives, Icons.Filled.Archive, Color(0xFF9B713B))
+            QuickCategory(R.string.audio, Icons.Filled.MusicNote, Color(0xFFFF9800)),
+            QuickCategory(R.string.documents, Icons.Filled.Description, Color(0xFF55677A)),
+            QuickCategory(R.string.downloads, Icons.Filled.Download, Color(0xFF1E88E5)),
+            QuickCategory(R.string.apks, Icons.Filled.Android, Color(0xFF3D8B6D)),
+            QuickCategory(R.string.archives, Icons.Filled.Archive, Color(0xFFF57C00))
         )
     }
-    LazyRow(
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(end = 8.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(categories, key = { it.labelRes }) { category ->
+        categories.forEach { category ->
             Card(
                 onClick = onOpenFiles,
                 modifier = Modifier.width(88.dp),

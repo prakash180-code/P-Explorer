@@ -6,6 +6,7 @@ data class ExplorerFile(
     val isDirectory: Boolean,
     val sizeBytes: Long,
     val modifiedEpochMillis: Long?,
+    val createdEpochMillis: Long? = null,
     val mimeType: String?,
     val kind: FileKind
 ) {
