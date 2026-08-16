@@ -52,6 +52,8 @@
     <string name="version_format">Version %1$s</string>
     <string name="back">Back</string>
     <string name="more_options">More options</string>
+    <string name="new_tab">New tab</string>
+    <string name="close_tab">Close tab</string>
     <string name="create_folder">Create folder</string>
     <string name="rename">Rename</string>
     <string name="delete">Delete</string>

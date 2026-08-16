@@ -125,7 +125,7 @@ fun PExplorerApp(
                         navController.navigateTopLevel(TopLevelDestination.FILES)
                     },
                     onOpenStorage = { path ->
-                        viewModel.openDirectory(path)
+                        viewModel.openFolderInNewTab(path)
                         navController.navigateTopLevel(TopLevelDestination.FILES)
                     },
                     onRequestStorageAccess = onRequestStorageAccess,
@@ -142,6 +142,11 @@ fun PExplorerApp(
                         .firstOrNull { it.path == uiState.browserRootPath }
                         ?.label
                         ?: stringResource(R.string.internal_storage),
+                    tabs = uiState.tabs,
+                    activeTabId = uiState.activeTabId,
+                    onSwitchTab = viewModel::switchTab,
+                    onCloseTab = viewModel::closeTab,
+                    onNewTab = viewModel::openNewTab,
                     viewStyle = uiState.viewStyle,
                     sortOrder = uiState.preferences.sortOrder,
                     foldersFirst = uiState.preferences.foldersFirst,

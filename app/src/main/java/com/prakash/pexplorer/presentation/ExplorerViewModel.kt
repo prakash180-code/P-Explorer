@@ -14,6 +14,7 @@ import com.prakash.pexplorer.data.repository.FileRepository
 import com.prakash.pexplorer.data.repository.MetadataRepository
 import com.prakash.pexplorer.domain.model.ExplorerFile
 import com.prakash.pexplorer.domain.model.ExplorerPreferences
+import com.prakash.pexplorer.domain.model.ExplorerTab
 import com.prakash.pexplorer.domain.model.FileOperation
 import com.prakash.pexplorer.domain.model.FileProperties
 import com.prakash.pexplorer.domain.model.FileReference
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 
 data class BrowserUiState(
     val path: String,
@@ -136,17 +138,29 @@ data class ExplorerUiState(
     val analyzer: AnalyzerUiState = AnalyzerUiState(),
     val largeFiles: LargeFilesUiState = LargeFilesUiState(),
     val duplicates: DuplicateUiState = DuplicateUiState(),
-    val network: NetworkUiState = NetworkUiState()
+    val network: NetworkUiState = NetworkUiState(),
+    val tabs: List<ExplorerTab> = emptyList(),
+    val activeTabId: String = ""
 )
 
 class ExplorerViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = FileRepository(LocalFileSystemProvider(application))
     private val metadataRepository = MetadataRepository(MetadataStore(application))
     private val networkProvider: NetworkFileProvider = PHubNetworkProvider(application)
+    private val initialTabId = UUID.randomUUID().toString()
     private val _uiState = MutableStateFlow(
         ExplorerUiState(
             browserRootPath = repository.primaryStoragePath,
-            browser = BrowserUiState(path = repository.primaryStoragePath)
+            browser = BrowserUiState(path = repository.primaryStoragePath),
+            tabs = listOf(
+                ExplorerTab(
+                    id = initialTabId,
+                    title = getApplication<Application>().getString(R.string.internal_storage),
+                    path = repository.primaryStoragePath,
+                    rootPath = repository.primaryStoragePath
+                )
+            ),
+            activeTabId = initialTabId
         )
     )
     val uiState: StateFlow<ExplorerUiState> = _uiState.asStateFlow()
@@ -190,7 +204,80 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openRoot() {
-        openDirectory(repository.primaryStoragePath)
+        openDirectory(_uiState.value.browserRootPath)
+    }
+
+    fun openFolderInNewTab(path: String) {
+        if (!repository.isPathInsideStorage(path)) {
+            _uiState.update {
+                it.copy(browser = it.browser.copy(isLoading = false, errorMessage = storageUnavailableMessage()))
+            }
+            return
+        }
+        val rootPath = repository.storageRootPathFor(path) ?: repository.primaryStoragePath
+        val tab = ExplorerTab(
+            id = UUID.randomUUID().toString(),
+            title = tabTitle(path, rootPath),
+            path = path,
+            rootPath = rootPath
+        )
+        _uiState.update {
+            it.copy(
+                tabs = it.tabs + tab,
+                activeTabId = tab.id,
+                browserRootPath = rootPath,
+                browser = BrowserUiState(path = path, isLoading = true)
+            )
+        }
+        openDirectory(path)
+    }
+
+    fun openNewTab() {
+        openFolderInNewTab(repository.primaryStoragePath)
+    }
+
+    fun switchTab(tabId: String) {
+        val tab = _uiState.value.tabs.firstOrNull { it.id == tabId } ?: return
+        if (tab.id == _uiState.value.activeTabId) return
+        directoryJob?.cancel()
+        _uiState.update {
+            it.copy(
+                activeTabId = tab.id,
+                browserRootPath = tab.rootPath,
+                browser = BrowserUiState(path = tab.path, isLoading = true)
+            )
+        }
+        openDirectory(tab.path)
+    }
+
+    fun closeTab(tabId: String) {
+        val state = _uiState.value
+        if (state.tabs.size <= 1) {
+            openRoot()
+            return
+        }
+        val tabIndex = state.tabs.indexOfFirst { it.id == tabId }
+        if (tabIndex < 0) return
+        val closingActive = tabId == state.activeTabId
+        val remaining = state.tabs.filterNot { it.id == tabId }
+        val nextTab = if (closingActive) {
+            remaining.getOrNull(tabIndex.coerceAtMost(remaining.lastIndex)) ?: remaining.last()
+        } else {
+            remaining.firstOrNull { it.id == state.activeTabId } ?: remaining.first()
+        }
+        _uiState.update {
+            if (closingActive) {
+                it.copy(
+                    tabs = remaining,
+                    activeTabId = nextTab.id,
+                    browserRootPath = nextTab.rootPath,
+                    browser = BrowserUiState(path = nextTab.path, isLoading = true)
+                )
+            } else {
+                it.copy(tabs = remaining)
+            }
+        }
+        if (closingActive) openDirectory(nextTab.path)
     }
 
     fun openDirectory(path: String) {
@@ -204,9 +291,20 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         directoryJob?.cancel()
         val browserRootPath = repository.storageRootPathFor(path) ?: _uiState.value.browserRootPath
         val preferences = _uiState.value.preferences
+        val activeTabId = _uiState.value.activeTabId
+        val updatedTab = _uiState.value.tabs
+            .firstOrNull { it.id == activeTabId }
+            ?.copy(
+                title = tabTitle(path, browserRootPath),
+                path = path,
+                rootPath = browserRootPath
+            )
         _uiState.update {
             it.copy(
                 browserRootPath = browserRootPath,
+                tabs = if (updatedTab == null) it.tabs else it.tabs.map { tab ->
+                    if (tab.id == activeTabId) updatedTab else tab
+                },
                 browser = it.browser.copy(
                     path = path,
                     items = emptyList(),
@@ -1166,6 +1264,20 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             detail.contains("timeout") || detail.contains("timed out") ->
                 getApplication<Application>().getString(R.string.network_timeout)
             else -> getApplication<Application>().getString(R.string.network_connection_failed)
+        }
+    }
+
+    private fun tabTitle(path: String, rootPath: String): String {
+        if (path == rootPath) {
+            return _uiState.value.storage.firstOrNull { it.path == rootPath }?.label
+                ?: if (rootPath == repository.primaryStoragePath) {
+                    getApplication<Application>().getString(R.string.internal_storage)
+                } else {
+                    File(rootPath).name
+                }
+        }
+        return File(path).name.ifBlank {
+            getApplication<Application>().getString(R.string.files)
         }
     }
 

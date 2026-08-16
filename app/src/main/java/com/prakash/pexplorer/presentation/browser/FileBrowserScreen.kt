@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CheckCircle
@@ -75,6 +77,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,6 +89,7 @@ import com.prakash.pexplorer.core.util.displayFileName
 import com.prakash.pexplorer.domain.model.ExplorerFile
 import com.prakash.pexplorer.domain.model.FileOperation
 import com.prakash.pexplorer.domain.model.SortOrder
+import com.prakash.pexplorer.domain.model.ExplorerTab
 import com.prakash.pexplorer.domain.model.ViewStyle
 import com.prakash.pexplorer.presentation.BrowserUiState
 import com.prakash.pexplorer.presentation.PropertiesUiState
@@ -99,12 +103,18 @@ import com.prakash.pexplorer.presentation.components.TransferDestinationDialog
 import com.prakash.pexplorer.presentation.components.TransferProgressDialog
 import com.prakash.pexplorer.presentation.components.ZipNameDialog
 import java.io.File
+import kotlin.math.abs
 
 @Composable
 fun FileBrowserScreen(
     browserState: BrowserUiState,
     rootPath: String,
     rootLabel: String,
+    tabs: List<ExplorerTab>,
+    activeTabId: String,
+    onSwitchTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
+    onNewTab: () -> Unit,
     viewStyle: ViewStyle,
     sortOrder: SortOrder,
     foldersFirst: Boolean,
@@ -234,7 +244,34 @@ fun FileBrowserScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .pointerInput(activeTabId, tabs.size) {
+                    var dragDistance = 0f
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            dragDistance += dragAmount
+                        },
+                        onDragEnd = {
+                            if (abs(dragDistance) > 80f) {
+                                val activeIndex = tabs.indexOfFirst { it.id == activeTabId }
+                                val targetIndex = if (dragDistance < 0f) {
+                                    activeIndex + 1
+                                } else {
+                                    activeIndex - 1
+                                }
+                                tabs.getOrNull(targetIndex)?.let { onSwitchTab(it.id) }
+                            }
+                        }
+                    )
+                }
         ) {
+            TabStrip(
+                tabs = tabs,
+                activeTabId = activeTabId,
+                onSwitchTab = onSwitchTab,
+                onCloseTab = onCloseTab,
+                onNewTab = onNewTab
+            )
             Breadcrumbs(
                 path = browserState.path,
                 rootPath = rootPath,
@@ -591,6 +628,81 @@ private fun BrowserTopBar(
             containerColor = MaterialTheme.colorScheme.background
         )
     )
+}
+
+@Composable
+private fun TabStrip(
+    tabs: List<ExplorerTab>,
+    activeTabId: String,
+    onSwitchTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
+    onNewTab: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        tabs.forEach { tab ->
+            val isActive = tab.id == activeTabId
+            Surface(
+                onClick = { onSwitchTab(tab.id) },
+                shape = RoundedCornerShape(12.dp),
+                color = if (isActive) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                }
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = tab.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (isActive) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (tabs.size > 1) {
+                        IconButton(
+                            onClick = { onCloseTab(tab.id) },
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.close_tab),
+                                tint = if (isActive) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        IconButton(
+            onClick = onNewTab,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = stringResource(R.string.new_tab),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
 }
 
 private data class Breadcrumb(
