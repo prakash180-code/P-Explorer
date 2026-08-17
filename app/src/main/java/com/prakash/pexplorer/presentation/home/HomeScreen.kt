@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.prakash.pexplorer.R
 import com.prakash.pexplorer.core.util.formatBytes
+import com.prakash.pexplorer.domain.model.FileCategory
 import com.prakash.pexplorer.domain.model.StorageInfo
 import com.prakash.pexplorer.presentation.ExplorerUiState
 import com.prakash.pexplorer.presentation.navigation.UtilityDestination
@@ -70,6 +71,7 @@ fun HomeScreen(
     state: ExplorerUiState,
     onOpenFiles: () -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenCategory: (FileCategory) -> Unit,
     onCreateFolder: () -> Unit,
     onOpenStorage: (String) -> Unit,
     onRequestStorageAccess: () -> Unit,
@@ -114,7 +116,7 @@ fun HomeScreen(
         }
 
         item {
-            QuickCategories(onOpenFiles = onOpenFiles)
+            QuickCategories(onOpenCategory = onOpenCategory)
         }
 
         item {
@@ -448,21 +450,22 @@ private fun QuickActions(
 private data class QuickCategory(
     val labelRes: Int,
     val icon: ImageVector,
-    val tint: Color
+    val tint: Color,
+    val category: FileCategory
 )
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun QuickCategories(onOpenFiles: () -> Unit) {
+private fun QuickCategories(onOpenCategory: (FileCategory) -> Unit) {
     val categories = remember {
         listOf(
-            QuickCategory(R.string.images, Icons.Filled.Image, Color(0xFF4F8EF7)),
-            QuickCategory(R.string.videos, Icons.Filled.Movie, Color(0xFF8E62B1)),
-            QuickCategory(R.string.audio, Icons.Filled.MusicNote, Color(0xFFFF9800)),
-            QuickCategory(R.string.documents, Icons.Filled.Description, Color(0xFF55677A)),
-            QuickCategory(R.string.downloads, Icons.Filled.Download, Color(0xFF1E88E5)),
-            QuickCategory(R.string.apks, Icons.Filled.Android, Color(0xFF3D8B6D)),
-            QuickCategory(R.string.archives, Icons.Filled.Archive, Color(0xFFF57C00))
+            QuickCategory(R.string.images, Icons.Filled.Image, Color(0xFF4F8EF7), FileCategory.IMAGES),
+            QuickCategory(R.string.videos, Icons.Filled.Movie, Color(0xFF8E62B1), FileCategory.VIDEOS),
+            QuickCategory(R.string.audio, Icons.Filled.MusicNote, Color(0xFFFF9800), FileCategory.AUDIO),
+            QuickCategory(R.string.documents, Icons.Filled.Description, Color(0xFF55677A), FileCategory.DOCUMENTS),
+            QuickCategory(R.string.downloads, Icons.Filled.Download, Color(0xFF1E88E5), FileCategory.DOWNLOADS),
+            QuickCategory(R.string.apks, Icons.Filled.Android, Color(0xFF3D8B6D), FileCategory.APKS),
+            QuickCategory(R.string.archives, Icons.Filled.Archive, Color(0xFFF57C00), FileCategory.ARCHIVES)
         )
     }
     FlowRow(
@@ -471,7 +474,7 @@ private fun QuickCategories(onOpenFiles: () -> Unit) {
     ) {
         categories.forEach { category ->
             Card(
-                onClick = onOpenFiles,
+                onClick = { onOpenCategory(category.category) },
                 modifier = Modifier.width(88.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(

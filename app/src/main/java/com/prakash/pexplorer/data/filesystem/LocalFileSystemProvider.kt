@@ -10,6 +10,7 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.ContextCompat
 import com.prakash.pexplorer.R
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.FileCategory
 import com.prakash.pexplorer.domain.model.DuplicateGroup
 import com.prakash.pexplorer.domain.model.FileOperation
 import com.prakash.pexplorer.domain.model.FileProperties
@@ -107,15 +108,20 @@ class LocalFileSystemProvider(
         }
     }
 
-    override suspend fun search(query: String, showHidden: Boolean): Result<List<ExplorerFile>> =
+    override suspend fun search(
+        query: String,
+        showHidden: Boolean,
+        category: FileCategory?
+    ): Result<List<ExplorerFile>> =
         withContext(Dispatchers.IO) {
             runCatching {
                 requireStorageAccess()
                 val normalizedQuery = query.trim().lowercase(Locale.ROOT)
-                if (normalizedQuery.isBlank()) return@runCatching emptyList()
+                if (normalizedQuery.isBlank() && category == null) return@runCatching emptyList()
                 val index = searchIndex ?: buildSearchIndex().also { searchIndex = it }
                 index.asSequence()
                     .filter { showHidden || !isInHiddenPath(it.path) }
+                    .filter { category == null || matchesCategory(it, category) }
                     .filter { file ->
                         val name = file.name.lowercase(Locale.ROOT)
                         val path = file.path.lowercase(Locale.ROOT)
@@ -124,6 +130,7 @@ class LocalFileSystemProvider(
                         val year = file.modifiedEpochMillis?.let {
                             SimpleDateFormat("yyyy", Locale.ROOT).format(Date(it))
                         }
+                        normalizedQuery.isBlank() ||
                             name.contains(normalizedQuery) ||
                             path.contains(normalizedQuery) ||
                             (extensionQuery.isNotBlank() && extension.contains(extensionQuery)) ||
@@ -713,6 +720,23 @@ class LocalFileSystemProvider(
 
     private fun isInHiddenPath(path: String): Boolean =
         path.split('/', '\\').any { segment -> segment.startsWith('.') }
+
+    private fun matchesCategory(file: ExplorerFile, category: FileCategory): Boolean = when (category) {
+        FileCategory.IMAGES -> file.kind == FileKind.IMAGE
+        FileCategory.VIDEOS -> file.kind == FileKind.VIDEO
+        FileCategory.AUDIO -> file.kind == FileKind.AUDIO
+        FileCategory.DOCUMENTS -> file.kind in setOf(
+            FileKind.DOCUMENT,
+            FileKind.SPREADSHEET,
+            FileKind.PRESENTATION,
+            FileKind.PDF,
+            FileKind.TEXT
+        )
+        FileCategory.DOWNLOADS -> file.path.split('/', '\\')
+            .any { it.equals("Download", ignoreCase = true) }
+        FileCategory.APKS -> file.kind == FileKind.APK
+        FileCategory.ARCHIVES -> file.kind == FileKind.ARCHIVE
+    }
 
     private data class FolderStats(
         val sizeBytes: Long,

@@ -13,6 +13,7 @@ import com.prakash.pexplorer.data.preferences.MetadataStore
 import com.prakash.pexplorer.data.repository.FileRepository
 import com.prakash.pexplorer.data.repository.MetadataRepository
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.FileCategory
 import com.prakash.pexplorer.domain.model.ExplorerPreferences
 import com.prakash.pexplorer.domain.model.ExplorerTab
 import com.prakash.pexplorer.domain.model.FileOperation
@@ -451,6 +452,41 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { metadataRepository.clearSearchHistory() }
     }
 
+    fun openCategory(category: FileCategory) {
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(
+                search = it.search.copy(
+                    query = "",
+                    category = category,
+                    results = emptyList(),
+                    isSearching = true,
+                    hasSearched = false,
+                    errorMessage = null
+                )
+            )
+        }
+        searchJob = viewModelScope.launch {
+            performSearch(query = "", category = category, recordQuery = false)
+        }
+    }
+
+    fun clearSearchCategory() {
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(
+                search = it.search.copy(
+                    query = "",
+                    category = null,
+                    results = emptyList(),
+                    isSearching = false,
+                    hasSearched = false,
+                    errorMessage = null
+                )
+            )
+        }
+    }
+
     fun openPreview(file: ExplorerFile) {
         previewJob?.cancel()
         _uiState.update {
@@ -812,48 +848,57 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun updateSearchQuery(query: String) {
         searchJob?.cancel()
+        val category = _uiState.value.search.category
         _uiState.update {
             it.copy(
                 search = it.search.copy(
                     query = query,
-                    results = if (query.isBlank()) emptyList() else it.search.results,
-                    hasSearched = if (query.isBlank()) false else it.search.hasSearched,
+                    results = if (query.isBlank() && category == null) emptyList() else it.search.results,
+                    hasSearched = if (query.isBlank() && category == null) false else it.search.hasSearched,
                     errorMessage = null
                 )
             )
         }
-        if (query.isBlank()) return
+        if (query.isBlank() && category == null) return
 
         searchJob = viewModelScope.launch {
             delay(350)
-            _uiState.update { it.copy(search = it.search.copy(isSearching = true, errorMessage = null)) }
-            repository.search(query, _uiState.value.preferences.showHiddenFiles)
-                .onSuccess { results ->
-                    _uiState.update {
-                        it.copy(
-                            search = it.search.copy(
-                                results = results,
-                                isSearching = false,
-                                hasSearched = true,
-                                errorMessage = null
-                            )
-                        )
-                    }
-                    metadataRepository.recordSearch(query)
-                }
-                .onFailure { error ->
-                    if (error is CancellationException) return@onFailure
-                    _uiState.update {
-                        it.copy(
-                            search = it.search.copy(
-                                isSearching = false,
-                                hasSearched = true,
-                                errorMessage = friendlyError(error)
-                            )
-                        )
-                    }
-                }
+            performSearch(query, category, recordQuery = query.isNotBlank())
         }
+    }
+
+    private suspend fun performSearch(
+        query: String,
+        category: FileCategory?,
+        recordQuery: Boolean
+    ) {
+        _uiState.update { it.copy(search = it.search.copy(isSearching = true, errorMessage = null)) }
+        repository.search(query, _uiState.value.preferences.showHiddenFiles, category)
+            .onSuccess { results ->
+                _uiState.update {
+                    it.copy(
+                        search = it.search.copy(
+                            results = results,
+                            isSearching = false,
+                            hasSearched = true,
+                            errorMessage = null
+                        )
+                    )
+                }
+                if (recordQuery) metadataRepository.recordSearch(query)
+            }
+            .onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                _uiState.update {
+                    it.copy(
+                        search = it.search.copy(
+                            isSearching = false,
+                            hasSearched = true,
+                            errorMessage = friendlyError(error)
+                        )
+                    )
+                }
+            }
     }
 
     fun toggleSelection(path: String) {

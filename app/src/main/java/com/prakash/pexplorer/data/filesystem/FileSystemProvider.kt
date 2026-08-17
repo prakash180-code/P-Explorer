@@ -1,6 +1,7 @@
 package com.prakash.pexplorer.data.filesystem
 
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.FileCategory
 import com.prakash.pexplorer.domain.model.FileProperties
 import com.prakash.pexplorer.domain.model.StorageInfo
 import com.prakash.pexplorer.domain.model.StorageAnalysis
@@ -22,7 +23,11 @@ interface FileSystemProvider {
         showHidden: Boolean
     ): Result<List<ExplorerFile>>
 
-    suspend fun search(query: String, showHidden: Boolean): Result<List<ExplorerFile>>
+    suspend fun search(
+        query: String,
+        showHidden: Boolean,
+        category: FileCategory? = null
+    ): Result<List<ExplorerFile>>
 
     suspend fun readText(path: String, maxBytes: Int): Result<TextContent>
 

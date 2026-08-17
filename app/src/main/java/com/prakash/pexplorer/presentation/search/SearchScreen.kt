@@ -42,6 +42,7 @@ import com.prakash.pexplorer.R
 import com.prakash.pexplorer.core.util.displayFileName
 import com.prakash.pexplorer.core.util.formatBytes
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.FileCategory
 import com.prakash.pexplorer.domain.model.SearchUiState
 import com.prakash.pexplorer.presentation.components.FileVisual
 
@@ -75,7 +76,15 @@ fun SearchScreen(
                         onValueChange = onQueryChanged,
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        placeholder = { Text(stringResource(R.string.search_hint)) },
+                        placeholder = {
+                            Text(
+                                if (state.category == null) {
+                                    stringResource(R.string.search_hint)
+                                } else {
+                                    stringResource(categoryLabel(state.category))
+                                }
+                            )
+                        },
                         trailingIcon = if (state.query.isNotEmpty()) {
                             {
                                 IconButton(onClick = { onQueryChanged("") }) {
@@ -109,7 +118,7 @@ fun SearchScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             when {
-                state.query.isBlank() -> RecentSearches(
+                state.query.isBlank() && state.category == null -> RecentSearches(
                     searches = recentSearches,
                     onUseRecentSearch = onUseRecentSearch,
                     onClearHistory = onClearHistory
@@ -141,6 +150,16 @@ fun SearchScreen(
             }
         }
     }
+}
+
+private fun categoryLabel(category: FileCategory): Int = when (category) {
+    FileCategory.IMAGES -> R.string.images
+    FileCategory.VIDEOS -> R.string.videos
+    FileCategory.AUDIO -> R.string.audio
+    FileCategory.DOCUMENTS -> R.string.documents
+    FileCategory.DOWNLOADS -> R.string.downloads
+    FileCategory.APKS -> R.string.apks
+    FileCategory.ARCHIVES -> R.string.archives
 }
 
 @Composable

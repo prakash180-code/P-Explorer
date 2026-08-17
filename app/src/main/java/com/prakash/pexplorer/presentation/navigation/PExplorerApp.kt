@@ -117,6 +117,11 @@ fun PExplorerApp(
                         navController.navigateTopLevel(TopLevelDestination.FILES)
                     },
                     onOpenSearch = {
+                        viewModel.clearSearchCategory()
+                        navController.navigate(SEARCH_ROUTE)
+                    },
+                    onOpenCategory = { category ->
+                        viewModel.openCategory(category)
                         navController.navigate(SEARCH_ROUTE)
                     },
                     onCreateFolder = {
@@ -207,7 +212,10 @@ fun PExplorerApp(
                         viewModel.openDirectory(path)
                         navController.navigateTopLevel(TopLevelDestination.FILES)
                     },
-                    onBack = { navController.popBackStack() }
+                    onBack = {
+                        viewModel.clearSearchCategory()
+                        navController.popBackStack()
+                    }
                 )
             }
             composable(PREVIEW_ROUTE) {

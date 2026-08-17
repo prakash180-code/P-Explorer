@@ -2,6 +2,7 @@ package com.prakash.pexplorer.data.repository
 
 import com.prakash.pexplorer.data.filesystem.FileSystemProvider
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.FileCategory
 import com.prakash.pexplorer.domain.model.FileProperties
 import com.prakash.pexplorer.domain.model.StorageInfo
 import com.prakash.pexplorer.domain.model.SortOrder
@@ -80,8 +81,12 @@ class FileRepository(
     fun storageRootPathFor(path: String): String? =
         fileSystemProvider.storageRootPathFor(path)
 
-    suspend fun search(pathQuery: String, showHidden: Boolean): Result<List<ExplorerFile>> =
-        fileSystemProvider.search(pathQuery, showHidden)
+    suspend fun search(
+        pathQuery: String,
+        showHidden: Boolean,
+        category: FileCategory? = null
+    ): Result<List<ExplorerFile>> =
+        fileSystemProvider.search(pathQuery, showHidden, category)
 
     fun invalidateSearchIndex() = fileSystemProvider.invalidateSearchIndex()
 
