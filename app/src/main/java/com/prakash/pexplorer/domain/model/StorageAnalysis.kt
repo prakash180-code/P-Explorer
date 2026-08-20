@@ -17,13 +17,21 @@ data class StorageCategoryUsage(
     val fileCount: Int
 )
 
+data class FolderUsage(
+    val path: String,
+    val name: String,
+    val bytes: Long,
+    val fileCount: Int
+)
+
 data class StorageAnalysis(
     val totalBytes: Long,
     val usedBytes: Long,
     val freeBytes: Long,
     val categories: List<StorageCategoryUsage>,
     val largestFiles: List<ExplorerFile>,
-    val scannedFileCount: Int
+    val scannedFileCount: Int,
+    val categoryFiles: Map<StorageCategory, List<ExplorerFile>> = emptyMap()
 )
 
 data class ScanProgress(

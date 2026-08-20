@@ -1,6 +1,7 @@
 package com.prakash.pexplorer.presentation.analyzer
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,8 +19,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,43 +39,135 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.prakash.pexplorer.R
 import com.prakash.pexplorer.core.util.formatBytes
+import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.FolderUsage
+import com.prakash.pexplorer.domain.model.SortOrder
 import com.prakash.pexplorer.domain.model.StorageAnalysis
 import com.prakash.pexplorer.domain.model.StorageCategory
+import com.prakash.pexplorer.domain.usecase.FileSorter
+import com.prakash.pexplorer.domain.usecase.FolderGrouper
 import com.prakash.pexplorer.presentation.AnalyzerUiState
 import com.prakash.pexplorer.presentation.ScanUiState
+
+private sealed interface AnalyzerLevel {
+    data object Overview : AnalyzerLevel
+    data class Category(val category: StorageCategory) : AnalyzerLevel
+    data class Folder(val category: StorageCategory, val folder: FolderUsage) : AnalyzerLevel
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun StorageAnalyzerScreen(
     state: AnalyzerUiState,
+    showFileExtensions: Boolean,
     onScan: () -> Unit,
     onOpenLargeFiles: () -> Unit,
     onOpenDuplicates: () -> Unit,
+    onOpenFile: (ExplorerFile) -> Unit,
+    onDelete: (List<String>) -> Unit,
+    onShare: (List<ExplorerFile>) -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
+    var level by remember { mutableStateOf<AnalyzerLevel>(AnalyzerLevel.Overview) }
+    var sortOrder by remember { mutableStateOf(SortOrder.SIZE_LARGEST) }
+    var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val analysis = state.analysis
+
     LaunchedEffect(Unit) {
-        if (state.analysis == null && !state.scan.isScanning) onScan()
+        if (analysis == null && !state.scan.isScanning) onScan()
     }
+    LaunchedEffect(analysis) {
+        if (analysis == null) level = AnalyzerLevel.Overview
+    }
+    BackHandler {
+        when {
+            selectedPaths.isNotEmpty() -> selectedPaths = emptySet()
+            level is AnalyzerLevel.Folder -> level = (level as AnalyzerLevel.Folder).let {
+                AnalyzerLevel.Category(it.category)
+            }
+            level is AnalyzerLevel.Category -> level = AnalyzerLevel.Overview
+            else -> onBack()
+        }
+    }
+
+    val category = (level as? AnalyzerLevel.Category)?.category
+    val folder = (level as? AnalyzerLevel.Folder)?.folder
+    val selectedFiles = if (analysis != null && category != null && folder == null) {
+        analysis.categoryFiles[category]?.filter { it.path in selectedPaths }.orEmpty()
+    } else if (analysis != null && category != null && folder != null) {
+        analysis.categoryFiles[category]
+            ?.filter { FolderGrouper.parentOf(it.path) == folder.path && it.path in selectedPaths }
+            .orEmpty()
+    } else {
+        emptyList()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.storage_analyzer)) },
+                title = {
+                    when {
+                        selectedPaths.isNotEmpty() -> Text(
+                            pluralStringResource(R.plurals.selected_count, selectedPaths.size, selectedPaths.size)
+                        )
+                        folder != null -> Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        category != null -> Text(categoryLabel(category))
+                        else -> Text(stringResource(R.string.storage_analyzer))
+                    }
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                    IconButton(onClick = {
+                        when {
+                            selectedPaths.isNotEmpty() -> selectedPaths = emptySet()
+                            level is AnalyzerLevel.Folder -> level = AnalyzerLevel.Category(category!!)
+                            level is AnalyzerLevel.Category -> level = AnalyzerLevel.Overview
+                            else -> onBack()
+                        }
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.back)
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = onScan) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.scan_storage))
+                    when {
+                        selectedPaths.isNotEmpty() -> {
+                            IconButton(onClick = { onShare(selectedFiles) }) {
+                                Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.share))
+                            }
+                            IconButton(onClick = {
+                                onDelete(selectedPaths.toList())
+                                selectedPaths = emptySet()
+                            }) {
+                                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
+                            }
+                        }
+                        level != AnalyzerLevel.Overview -> {
+                            AnalyzerSortMenu(
+                                sortOrder = sortOrder,
+                                onSortOrderChange = { sortOrder = it },
+                                forFolders = level is AnalyzerLevel.Category
+                            )
+                        }
+                        else -> IconButton(onClick = onScan) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.scan_storage)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors()
@@ -81,12 +177,37 @@ fun StorageAnalyzerScreen(
         when {
             state.scan.isScanning -> ScanProgressContent(state.scan, paddingValues)
             state.scan.errorMessage != null -> ErrorContent(state.scan.errorMessage, onScan, paddingValues)
-            state.analysis != null -> AnalysisContent(
-                analysis = state.analysis,
-                paddingValues = paddingValues,
-                onOpenLargeFiles = onOpenLargeFiles,
-                onOpenDuplicates = onOpenDuplicates
-            )
+            analysis != null -> when (val currentLevel = level) {
+                AnalyzerLevel.Overview -> AnalysisContent(
+                    analysis = analysis,
+                    paddingValues = paddingValues,
+                    onOpenCategory = { level = AnalyzerLevel.Category(it) },
+                    onOpenLargeFiles = onOpenLargeFiles,
+                    onOpenDuplicates = onOpenDuplicates
+                )
+                is AnalyzerLevel.Category -> CategoryContent(
+                    analysis = analysis,
+                    category = currentLevel.category,
+                    sortOrder = sortOrder,
+                    paddingValues = paddingValues,
+                    onOpenFolder = { folderUsage ->
+                        level = AnalyzerLevel.Folder(currentLevel.category, folderUsage)
+                    }
+                )
+                is AnalyzerLevel.Folder -> FolderContent(
+                    analysis = analysis,
+                    category = currentLevel.category,
+                    folder = currentLevel.folder,
+                    sortOrder = sortOrder,
+                    showFileExtensions = showFileExtensions,
+                    selectedPaths = selectedPaths,
+                    paddingValues = paddingValues,
+                    onToggleSelection = { path ->
+                        selectedPaths = togglePath(selectedPaths, path)
+                    },
+                    onOpenFile = onOpenFile
+                )
+            }
             else -> EmptyAnalyzer(onScan, paddingValues)
         }
     }
@@ -139,6 +260,7 @@ fun ErrorContent(message: String, onScan: () -> Unit, paddingValues: PaddingValu
 private fun AnalysisContent(
     analysis: StorageAnalysis,
     paddingValues: PaddingValues,
+    onOpenCategory: (StorageCategory) -> Unit,
     onOpenLargeFiles: () -> Unit,
     onOpenDuplicates: () -> Unit
 ) {
@@ -183,7 +305,13 @@ private fun AnalysisContent(
         }
         item { Text(stringResource(R.string.storage_usage), style = MaterialTheme.typography.titleMedium) }
         items(analysis.categories, key = { it.category }) { usage ->
-            CategoryRow(usage.category, usage.bytes, usage.fileCount, analysis.usedBytes)
+            CategoryRow(
+                category = usage.category,
+                bytes = usage.bytes,
+                count = usage.fileCount,
+                totalUsedBytes = analysis.usedBytes,
+                onClick = { onOpenCategory(usage.category) }
+            )
         }
         item {
             Text(stringResource(R.string.largest_files), style = MaterialTheme.typography.titleMedium)
@@ -215,17 +343,171 @@ private fun AnalysisContent(
 }
 
 @Composable
-private fun CategoryRow(
+private fun CategoryContent(
+    analysis: StorageAnalysis,
+    category: StorageCategory,
+    sortOrder: SortOrder,
+    paddingValues: PaddingValues,
+    onOpenFolder: (FolderUsage) -> Unit
+) {
+    val categoryFiles = analysis.categoryFiles[category].orEmpty()
+    val folders = FolderGrouper.sort(FolderGrouper.group(categoryFiles), sortOrder)
+    val totalBytes = categoryFiles.sumOf { it.sizeBytes }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        item {
+            CategoryHeader(
+                category = category,
+                bytes = totalBytes,
+                count = categoryFiles.size,
+                totalUsedBytes = analysis.usedBytes
+            )
+        }
+        if (folders.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.no_files_in_category),
+                    modifier = Modifier.padding(24.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        items(folders, key = { it.path }) { usage ->
+            FolderUsageRow(
+                usage = usage,
+                totalBytes = totalBytes,
+                onClick = { onOpenFolder(usage) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderContent(
+    analysis: StorageAnalysis,
+    category: StorageCategory,
+    folder: FolderUsage,
+    sortOrder: SortOrder,
+    showFileExtensions: Boolean,
+    selectedPaths: Set<String>,
+    paddingValues: PaddingValues,
+    onToggleSelection: (String) -> Unit,
+    onOpenFile: (ExplorerFile) -> Unit
+) {
+    val folderFiles = analysis.categoryFiles[category].orEmpty()
+        .filter { FolderGrouper.parentOf(it.path) == folder.path }
+    val sortedFiles = FileSorter.sort(folderFiles, sortOrder, foldersFirst = false)
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                Text(
+                    text = folder.path,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.size(4.dp))
+                Text(
+                    text = "${formatBytes(folder.bytes)} • " +
+                        pluralStringResource(R.plurals.file_count, folder.fileCount, folder.fileCount),
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+        }
+        if (sortedFiles.isEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.no_files_in_category),
+                    modifier = Modifier.padding(24.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        items(sortedFiles, key = { it.path }) { file ->
+            AnalyzerFileRow(
+                file = file,
+                showFileExtensions = showFileExtensions,
+                isSelected = file.path in selectedPaths,
+                selectionMode = selectedPaths.isNotEmpty(),
+                onClick = {
+                    if (selectedPaths.isNotEmpty()) {
+                        onToggleSelection(file.path)
+                    } else {
+                        onOpenFile(file)
+                    }
+                },
+                onLongClick = { onToggleSelection(file.path) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryHeader(
     category: StorageCategory,
     bytes: Long,
     count: Int,
     totalUsedBytes: Long
 ) {
     val fraction = if (totalUsedBytes > 0) (bytes.toDouble() / totalUsedBytes).toFloat() else 0f
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(categoryLabel(category), style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${formatBytes(bytes)} • " +
+                    pluralStringResource(R.plurals.file_count, count, count),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            LinearProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.tertiary,
+                trackColor = MaterialTheme.colorScheme.surface
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryRow(
+    category: StorageCategory,
+    bytes: Long,
+    count: Int,
+    totalUsedBytes: Long,
+    onClick: () -> Unit
+) {
+    val fraction = if (totalUsedBytes > 0) (bytes.toDouble() / totalUsedBytes).toFloat() else 0f
+    Column(modifier = Modifier
+        .fillMaxWidth()
+        .clickable(onClick = onClick)
+        .padding(vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(categoryLabel(category), modifier = Modifier.weight(1f))
             Text(formatBytes(bytes), style = MaterialTheme.typography.labelLarge)
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
         }
         Spacer(modifier = Modifier.height(5.dp))
         LinearProgressIndicator(

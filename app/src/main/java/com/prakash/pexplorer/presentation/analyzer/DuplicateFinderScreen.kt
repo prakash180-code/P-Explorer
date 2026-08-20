@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,16 +18,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -47,6 +46,9 @@ import com.prakash.pexplorer.R
 import com.prakash.pexplorer.core.util.formatBytes
 import com.prakash.pexplorer.domain.model.DuplicateGroup
 import com.prakash.pexplorer.domain.model.ExplorerFile
+import com.prakash.pexplorer.domain.model.SortOrder
+import com.prakash.pexplorer.domain.usecase.FileSorter
+import com.prakash.pexplorer.domain.usecase.FolderGrouper
 import com.prakash.pexplorer.presentation.DuplicateUiState
 import com.prakash.pexplorer.presentation.components.FileVisual
 
@@ -58,45 +60,93 @@ fun DuplicateFinderScreen(
     onScan: () -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
     onDelete: (List<String>) -> Unit,
+    onShare: (List<ExplorerFile>) -> Unit,
     onBack: () -> Unit
 ) {
     var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
-    BackHandler(onBack = onBack)
+    var groupMode by remember { mutableStateOf(false) }
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
+    var sortOrder by remember { mutableStateOf(SortOrder.SIZE_LARGEST) }
+    BackHandler(onBack = {
+        when {
+            selectedPaths.isNotEmpty() -> selectedPaths = emptySet()
+            selectedFolder != null -> selectedFolder = null
+            groupMode -> groupMode = false
+            else -> onBack()
+        }
+    })
     LaunchedEffect(Unit) {
         if (state.groups.isEmpty() && !state.scan.isScanning) onScan()
     }
+    val allDuplicateFiles = remember(state.groups) {
+        state.groups.flatMap { it.files }
+    }
+    val currentFolder = selectedFolder
+    val selectedFiles = allDuplicateFiles.filter { it.path in selectedPaths }
+    val shownFiles = if (currentFolder != null) {
+        FileSorter.sort(
+            allDuplicateFiles.filter { FolderGrouper.parentOf(it.path) == currentFolder },
+            sortOrder,
+            foldersFirst = false
+        )
+    } else if (!groupMode) {
+        FileSorter.sort(allDuplicateFiles, sortOrder, foldersFirst = false)
+    } else {
+        emptyList()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        if (selectedPaths.isEmpty()) stringResource(R.string.duplicate_files)
-                        else pluralStringResource(
-                            R.plurals.selected_count,
-                            selectedPaths.size,
-                            selectedPaths.size
-                        )
+                        when {
+                            selectedPaths.isNotEmpty() -> pluralStringResource(
+                                R.plurals.selected_count,
+                                selectedPaths.size,
+                                selectedPaths.size
+                            )
+                            currentFolder != null -> currentFolder.substringAfterLast('/').ifEmpty { currentFolder }
+                            groupMode -> stringResource(R.string.folder_view)
+                            else -> stringResource(R.string.duplicate_files)
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (selectedPaths.isNotEmpty()) selectedPaths = emptySet() else onBack()
+                        when {
+                            selectedPaths.isNotEmpty() -> selectedPaths = emptySet()
+                            currentFolder != null -> selectedFolder = null
+                            groupMode -> groupMode = false
+                            else -> onBack()
+                        }
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
-                    if (selectedPaths.isNotEmpty()) {
-                        IconButton(onClick = {
-                            onDelete(selectedPaths.toList())
-                            selectedPaths = emptySet()
-                        }) {
-                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
+                    when {
+                        selectedPaths.isNotEmpty() -> {
+                            IconButton(onClick = { onShare(selectedFiles) }) {
+                                Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.share))
+                            }
+                            IconButton(onClick = {
+                                onDelete(selectedPaths.toList())
+                                selectedPaths = emptySet()
+                            }) {
+                                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
+                            }
                         }
-                    } else {
-                        IconButton(onClick = onScan) {
+                        currentFolder == null && !groupMode -> IconButton(onClick = onScan) {
                             Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.scan_storage))
                         }
+                        else -> AnalyzerSortMenu(
+                            sortOrder = sortOrder,
+                            onSortOrderChange = { sortOrder = it },
+                            forFolders = groupMode
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors()
@@ -104,24 +154,72 @@ fun DuplicateFinderScreen(
         }
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            if (!state.scan.isScanning && state.groups.isNotEmpty()) {
+            if (currentFolder == null && !state.scan.isScanning && state.groups.isNotEmpty()) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.End
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(onClick = {
-                        selectedPaths = state.groups
-                            .flatMap { it.files.drop(1) }
-                            .mapTo(mutableSetOf()) { it.path }
-                    }) {
-                        Text(stringResource(R.string.select_duplicates))
+                    if (!groupMode) {
+                        OutlinedButton(onClick = {
+                            selectedPaths = state.groups
+                                .flatMap { it.files.drop(1) }
+                                .mapTo(mutableSetOf()) { it.path }
+                        }) {
+                            Text(stringResource(R.string.select_duplicates))
+                        }
                     }
+                    AssistChip(
+                        onClick = {
+                            selectedPaths = emptySet()
+                            groupMode = !groupMode
+                        },
+                        label = { Text(stringResource(if (groupMode) R.string.file_view else R.string.folder_view)) }
+                    )
                 }
             }
             when {
                 state.scan.isScanning -> ScanProgressContent(state.scan, PaddingValues(24.dp))
                 state.scan.errorMessage != null -> ErrorContent(state.scan.errorMessage, onScan, PaddingValues(24.dp))
                 state.groups.isEmpty() -> EmptyDuplicates()
+                currentFolder != null -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(shownFiles, key = { it.path }) { file ->
+                        AnalyzerFileRow(
+                            file = file,
+                            showFileExtensions = showFileExtensions,
+                            isSelected = file.path in selectedPaths,
+                            selectionMode = selectedPaths.isNotEmpty(),
+                            onClick = {
+                                if (selectedPaths.isNotEmpty()) {
+                                    selectedPaths = togglePath(selectedPaths, file.path)
+                                } else {
+                                    onOpenFile(file)
+                                }
+                            },
+                            onLongClick = { selectedPaths = togglePath(selectedPaths, file.path) }
+                        )
+                    }
+                }
+                groupMode -> {
+                    val folders = FolderGrouper.sort(FolderGrouper.group(allDuplicateFiles), sortOrder)
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(folders, key = { it.path }) { folder ->
+                            FolderUsageRow(
+                                usage = folder,
+                                totalBytes = allDuplicateFiles.sumOf { it.sizeBytes },
+                                onClick = { selectedFolder = folder.path }
+                            )
+                        }
+                    }
+                }
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)
@@ -137,12 +235,12 @@ fun DuplicateFinderScreen(
                                 isSelected = file.path in selectedPaths,
                                 onClick = {
                                     if (selectedPaths.isNotEmpty()) {
-                                        selectedPaths = toggle(selectedPaths, file.path)
+                                        selectedPaths = togglePath(selectedPaths, file.path)
                                     } else {
                                         onOpenFile(file)
                                     }
                                 },
-                                onLongClick = { selectedPaths = toggle(selectedPaths, file.path) }
+                                onLongClick = { selectedPaths = togglePath(selectedPaths, file.path) }
                             )
                         }
                     }
@@ -212,6 +310,3 @@ private fun EmptyDuplicates() {
         Text(stringResource(R.string.no_duplicates), color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
-
-private fun toggle(paths: Set<String>, path: String): Set<String> =
-    if (path in paths) paths - path else paths + path

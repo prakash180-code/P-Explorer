@@ -261,6 +261,9 @@ fun PExplorerApp(
                     onScan = viewModel::scanLargeFiles,
                     onOpenFile = openExplorerFile,
                     onDelete = viewModel::delete,
+                    onShare = { files ->
+                        shareFiles(context, files)?.let(viewModel::showMessage)
+                    },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -271,6 +274,9 @@ fun PExplorerApp(
                     onScan = viewModel::scanDuplicates,
                     onOpenFile = openExplorerFile,
                     onDelete = viewModel::delete,
+                    onShare = { files ->
+                        shareFiles(context, files)?.let(viewModel::showMessage)
+                    },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -292,9 +298,15 @@ fun PExplorerApp(
                     } else if (destination == UtilityDestination.ANALYZER) {
                         StorageAnalyzerScreen(
                             state = uiState.analyzer,
+                            showFileExtensions = uiState.preferences.showFileExtensions,
                             onScan = viewModel::scanStorageAnalysis,
                             onOpenLargeFiles = { navController.navigate(LARGE_FILES_ROUTE) },
                             onOpenDuplicates = { navController.navigate(DUPLICATES_ROUTE) },
+                            onOpenFile = openExplorerFile,
+                            onDelete = viewModel::delete,
+                            onShare = { files ->
+                                shareFiles(context, files)?.let(viewModel::showMessage)
+                            },
                             onBack = { navController.popBackStack() }
                         )
                     } else if (destination == UtilityDestination.SETTINGS) {

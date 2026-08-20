@@ -194,6 +194,9 @@
     <string name="duplicate_group">Duplicate group</string>
     <string name="select_duplicates">Select duplicates</string>
     <string name="same_name_and_size">Same name and size</string>
+    <string name="folder_view">Folders</string>
+    <string name="file_view">Files</string>
+    <string name="no_files_in_category">No files in this category.</string>
     <string name="p_hub">P-Hub</string>
     <string name="network_files">Network files</string>
     <string name="discover_devices">Discover devices</string>

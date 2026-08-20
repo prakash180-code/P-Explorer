@@ -206,6 +206,8 @@ class LocalFileSystemProvider(
                 val files = scanAllFiles(showHidden = false, onProgress)
                 val usage = StorageCategory.entries.associateWith { StorageCategoryUsage(it, 0L, 0) }
                     .toMutableMap()
+                val filesByCategory = StorageCategory.entries.associateWith { mutableListOf<ExplorerFile>() }
+                    .toMutableMap()
                 files.forEach { file ->
                     val category = categoryFor(file)
                     val current = usage.getValue(category)
@@ -213,6 +215,7 @@ class LocalFileSystemProvider(
                         bytes = current.bytes + file.sizeBytes,
                         fileCount = current.fileCount + 1
                     )
+                    filesByCategory.getValue(category) += file
                 }
                 val totalBytes = roots.sumOf { it.totalBytes }
                 val freeBytes = roots.sumOf { it.freeBytes }
@@ -222,7 +225,10 @@ class LocalFileSystemProvider(
                     freeBytes = freeBytes,
                     categories = StorageCategory.entries.map { usage.getValue(it) },
                     largestFiles = files.sortedByDescending { it.sizeBytes }.take(100),
-                    scannedFileCount = files.size
+                    scannedFileCount = files.size,
+                    categoryFiles = filesByCategory.mapValues { (_, categoryFiles) ->
+                        categoryFiles.sortedByDescending { it.sizeBytes }
+                    }
                 )
             }
         }
