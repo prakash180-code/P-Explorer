@@ -22,6 +22,7 @@ import com.prakash.pexplorer.domain.model.StorageCategory
 import com.prakash.pexplorer.domain.model.StorageCategoryUsage
 import com.prakash.pexplorer.domain.model.TransferProgress
 import com.prakash.pexplorer.domain.usecase.FileNameError
+import com.prakash.pexplorer.domain.usecase.FileCategoryMatcher
 import com.prakash.pexplorer.domain.usecase.FileNameValidator
 import com.prakash.pexplorer.domain.usecase.UniqueFileName
 import kotlinx.coroutines.Dispatchers
@@ -121,7 +122,12 @@ class LocalFileSystemProvider(
                 val index = searchIndex ?: buildSearchIndex().also { searchIndex = it }
                 index.asSequence()
                     .filter { showHidden || !isInHiddenPath(it.path) }
-                    .filter { category == null || matchesCategory(it, category) }
+                    .filter {
+                        category == null || (
+                            FileCategoryMatcher.matches(it, category) &&
+                                !isSuppressedByNoMedia(it, category)
+                            )
+                    }
                     .filter { file ->
                         val name = file.name.lowercase(Locale.ROOT)
                         val path = file.path.lowercase(Locale.ROOT)
@@ -721,21 +727,18 @@ class LocalFileSystemProvider(
     private fun isInHiddenPath(path: String): Boolean =
         path.split('/', '\\').any { segment -> segment.startsWith('.') }
 
-    private fun matchesCategory(file: ExplorerFile, category: FileCategory): Boolean = when (category) {
-        FileCategory.IMAGES -> file.kind == FileKind.IMAGE
-        FileCategory.VIDEOS -> file.kind == FileKind.VIDEO
-        FileCategory.AUDIO -> file.kind == FileKind.AUDIO
-        FileCategory.DOCUMENTS -> file.kind in setOf(
-            FileKind.DOCUMENT,
-            FileKind.SPREADSHEET,
-            FileKind.PRESENTATION,
-            FileKind.PDF,
-            FileKind.TEXT
-        )
-        FileCategory.DOWNLOADS -> file.path.split('/', '\\')
-            .any { it.equals("Download", ignoreCase = true) }
-        FileCategory.APKS -> file.kind == FileKind.APK
-        FileCategory.ARCHIVES -> file.kind == FileKind.ARCHIVE
+    private fun isSuppressedByNoMedia(file: ExplorerFile, category: FileCategory): Boolean {
+        if (category !in setOf(FileCategory.IMAGES, FileCategory.VIDEOS, FileCategory.AUDIO)) {
+            return false
+        }
+        val root = storageRootPathFor(file.path)?.let { runCatching { File(it).canonicalFile }.getOrNull() }
+        var directory = runCatching { File(file.path).parentFile?.canonicalFile }.getOrNull()
+        while (directory != null) {
+            if (File(directory, ".nomedia").isFile) return true
+            if (root != null && directory == root) break
+            directory = directory.parentFile
+        }
+        return false
     }
 
     private data class FolderStats(
