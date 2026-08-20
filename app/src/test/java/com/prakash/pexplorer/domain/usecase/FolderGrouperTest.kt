@@ -64,12 +64,48 @@ class FolderGrouperTest {
         assertEquals(listOf("zz", "aa"), FolderGrouper.sort(usages, SortOrder.SIZE_SMALLEST).map { it.name })
     }
 
-    private fun file(path: String, name: String, sizeBytes: Long) = ExplorerFile(
+    @Test
+    fun groupCapturesLatestModifiedDate() {
+        val groups = FolderGrouper.group(
+            listOf(
+                file("/s/new/a.txt", "a.txt", 10, modified = 2000),
+                file("/s/new/b.txt", "b.txt", 20, modified = 1000)
+            )
+        )
+
+        assertEquals(2000L, groups.single().latestModifiedEpochMillis)
+    }
+
+    @Test
+    fun sortSupportsDateOrders() {
+        val usages = FolderGrouper.group(
+            listOf(
+                file("/s/older/a.txt", "a.txt", 1, modified = 1000),
+                file("/s/newer/b.txt", "b.txt", 1, modified = 3000)
+            )
+        )
+
+        assertEquals(
+            listOf("newer", "older"),
+            FolderGrouper.sort(usages, SortOrder.DATE_NEWEST).map { it.name }
+        )
+        assertEquals(
+            listOf("older", "newer"),
+            FolderGrouper.sort(usages, SortOrder.DATE_OLDEST).map { it.name }
+        )
+    }
+
+    private fun file(
+        path: String,
+        name: String,
+        sizeBytes: Long,
+        modified: Long? = null
+    ) = ExplorerFile(
         path = path,
         name = name,
         isDirectory = false,
         sizeBytes = sizeBytes,
-        modifiedEpochMillis = null,
+        modifiedEpochMillis = modified,
         mimeType = null,
         kind = FileKind.UNKNOWN
     )

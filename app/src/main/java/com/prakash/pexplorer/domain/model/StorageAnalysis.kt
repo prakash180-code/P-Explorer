@@ -21,7 +21,8 @@ data class FolderUsage(
     val path: String,
     val name: String,
     val bytes: Long,
-    val fileCount: Int
+    val fileCount: Int,
+    val latestModifiedEpochMillis: Long? = null
 )
 
 data class StorageAnalysis(

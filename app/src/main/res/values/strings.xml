@@ -122,8 +122,8 @@
     <string name="sort_by">Sort by</string>
     <string name="name_a_z">Name A-Z</string>
     <string name="name_z_a">Name Z-A</string>
-    <string name="date_newest">Date newest</string>
-    <string name="date_oldest">Date oldest</string>
+    <string name="date_newest">New to oldest</string>
+    <string name="date_oldest">Old to newest</string>
     <string name="size_largest">Size largest</string>
     <string name="size_smallest">Size smallest</string>
     <string name="file_type">File type</string>

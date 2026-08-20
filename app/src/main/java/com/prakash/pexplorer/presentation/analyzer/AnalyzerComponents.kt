@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.prakash.pexplorer.R
 import com.prakash.pexplorer.core.util.displayFileName
 import com.prakash.pexplorer.core.util.formatBytes
+import com.prakash.pexplorer.core.util.formatModifiedDate
 import com.prakash.pexplorer.domain.model.ExplorerFile
 import com.prakash.pexplorer.domain.model.FolderUsage
 import com.prakash.pexplorer.domain.model.SortOrder
@@ -63,7 +64,14 @@ fun AnalyzerSortMenu(
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             val options = if (forFolders) {
-                listOf(SortOrder.SIZE_LARGEST, SortOrder.SIZE_SMALLEST, SortOrder.NAME_ASC, SortOrder.NAME_DESC)
+                listOf(
+                    SortOrder.SIZE_LARGEST,
+                    SortOrder.SIZE_SMALLEST,
+                    SortOrder.DATE_NEWEST,
+                    SortOrder.DATE_OLDEST,
+                    SortOrder.NAME_ASC,
+                    SortOrder.NAME_DESC
+                )
             } else {
                 SortOrder.entries
             }
@@ -135,6 +143,14 @@ fun FolderUsageRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    usage.latestModifiedEpochMillis?.let { epochMillis ->
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = formatModifiedDate(epochMillis),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = formatBytes(usage.bytes),

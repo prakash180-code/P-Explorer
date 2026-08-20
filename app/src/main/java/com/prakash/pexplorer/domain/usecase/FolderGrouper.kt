@@ -18,11 +18,15 @@ object FolderGrouper {
             byFolder.getOrPut(parentOf(file.path)) { mutableListOf() } += file
         }
         return byFolder.map { (folderPath, folderFiles) ->
+            val latest = folderFiles
+                .mapNotNull { it.modifiedEpochMillis }
+                .maxOrNull()
             FolderUsage(
                 path = folderPath,
                 name = folderPath.substringAfterLast('/').ifEmpty { folderPath },
                 bytes = folderFiles.sumOf { it.sizeBytes },
-                fileCount = folderFiles.size
+                fileCount = folderFiles.size,
+                latestModifiedEpochMillis = latest
             )
         }.sortedByDescending { it.bytes }
     }
@@ -33,7 +37,8 @@ object FolderGrouper {
             SortOrder.NAME_DESC -> compareByDescending { it.name.lowercase(Locale.ROOT) }
             SortOrder.SIZE_LARGEST -> compareByDescending { it.bytes }
             SortOrder.SIZE_SMALLEST -> compareBy { it.bytes }
-            SortOrder.DATE_NEWEST, SortOrder.DATE_OLDEST,
+            SortOrder.DATE_NEWEST -> compareByDescending { it.latestModifiedEpochMillis ?: Long.MIN_VALUE }
+            SortOrder.DATE_OLDEST -> compareBy { it.latestModifiedEpochMillis ?: Long.MAX_VALUE }
             SortOrder.CREATED_NEWEST, SortOrder.CREATED_OLDEST,
             SortOrder.TYPE -> compareByDescending { it.bytes }
         }
