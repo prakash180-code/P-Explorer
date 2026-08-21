@@ -22,6 +22,7 @@ class MetadataRepository(
     suspend fun setConfirmBeforeDelete(enabled: Boolean) = store.setConfirmBeforeDelete(enabled)
     suspend fun setConfirmBeforeOverwrite(enabled: Boolean) = store.setConfirmBeforeOverwrite(enabled)
     suspend fun setRememberLastFolder(enabled: Boolean) = store.setRememberLastFolder(enabled)
+    suspend fun setRecentItemsEnabled(enabled: Boolean) = store.setRecentItemsEnabled(enabled)
     suspend fun setLastFolder(path: String?) = store.setLastFolder(path)
     suspend fun toggleFavorite(reference: FileReference) = store.toggleFavorite(reference)
     suspend fun removeFavorite(path: String) = store.removeFavorite(path)

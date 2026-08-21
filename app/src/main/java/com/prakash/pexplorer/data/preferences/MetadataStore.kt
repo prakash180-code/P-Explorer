@@ -70,6 +70,11 @@ class MetadataStore(context: Context) {
         it[Keys.REMEMBER_LAST_FOLDER] = enabled
     }
 
+    suspend fun setRecentItemsEnabled(enabled: Boolean) = dataStore.edit { preferences ->
+        preferences[Keys.RECENT_ITEMS_ENABLED] = enabled
+        if (!enabled) preferences.remove(Keys.RECENT_FILES)
+    }
+
     suspend fun setLastFolder(path: String?) = dataStore.edit {
         if (path == null) it.remove(Keys.LAST_FOLDER) else it[Keys.LAST_FOLDER] = path
     }
@@ -128,6 +133,7 @@ class MetadataStore(context: Context) {
         confirmBeforeDelete = preferences[Keys.CONFIRM_DELETE] ?: true,
         confirmBeforeOverwrite = preferences[Keys.CONFIRM_OVERWRITE] ?: true,
         rememberLastFolder = preferences[Keys.REMEMBER_LAST_FOLDER] ?: true,
+        recentItemsEnabled = preferences[Keys.RECENT_ITEMS_ENABLED] ?: true,
         lastFolder = preferences[Keys.LAST_FOLDER],
         favorites = decodeReferences(preferences[Keys.FAVORITES]),
         recentFiles = decodeReferences(preferences[Keys.RECENT_FILES]),
@@ -189,6 +195,7 @@ class MetadataStore(context: Context) {
         val CONFIRM_DELETE = booleanPreferencesKey("confirm_delete")
         val CONFIRM_OVERWRITE = booleanPreferencesKey("confirm_overwrite")
         val REMEMBER_LAST_FOLDER = booleanPreferencesKey("remember_last_folder")
+        val RECENT_ITEMS_ENABLED = booleanPreferencesKey("recent_items_enabled")
         val LAST_FOLDER = stringPreferencesKey("last_folder")
         val FAVORITES = stringPreferencesKey("favorites")
         val RECENT_FILES = stringPreferencesKey("recent_files")

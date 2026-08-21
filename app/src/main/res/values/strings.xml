@@ -142,6 +142,7 @@
     <string name="confirm_before_delete">Confirm before delete</string>
     <string name="confirm_before_overwrite">Confirm before overwrite</string>
     <string name="remember_last_folder">Remember last folder</string>
+    <string name="recent_items">Recent items</string>
     <string name="clear_cache">Clear search cache</string>
     <string name="cache_cleared">Search cache cleared</string>
     <string name="recent_empty_description">Files you open will appear here.</string>

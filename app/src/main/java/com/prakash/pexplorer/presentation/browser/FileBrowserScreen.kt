@@ -5,7 +5,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,7 +76,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -103,7 +101,6 @@ import com.prakash.pexplorer.presentation.components.TransferDestinationDialog
 import com.prakash.pexplorer.presentation.components.TransferProgressDialog
 import com.prakash.pexplorer.presentation.components.ZipNameDialog
 import java.io.File
-import kotlin.math.abs
 
 @Composable
 fun FileBrowserScreen(
@@ -244,26 +241,6 @@ fun FileBrowserScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .pointerInput(activeTabId, tabs.size) {
-                    var dragDistance = 0f
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragDistance += dragAmount
-                        },
-                        onDragEnd = {
-                            if (abs(dragDistance) > 80f) {
-                                val activeIndex = tabs.indexOfFirst { it.id == activeTabId }
-                                val targetIndex = if (dragDistance < 0f) {
-                                    activeIndex + 1
-                                } else {
-                                    activeIndex - 1
-                                }
-                                tabs.getOrNull(targetIndex)?.let { onSwitchTab(it.id) }
-                            }
-                        }
-                    )
-                }
         ) {
             TabStrip(
                 tabs = tabs,

@@ -418,6 +418,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { metadataRepository.setRememberLastFolder(enabled) }
     }
 
+    fun setRecentItemsEnabled(enabled: Boolean) {
+        viewModelScope.launch { metadataRepository.setRecentItemsEnabled(enabled) }
+    }
+
     fun clearCache() {
         repository.invalidateSearchIndex()
         emitMessage(R.string.cache_cleared)
@@ -435,6 +439,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun recordRecent(file: ExplorerFile) {
+        if (!_uiState.value.preferences.recentItemsEnabled) return
         viewModelScope.launch {
             metadataRepository.recordRecent(file.toReference(System.currentTimeMillis()))
         }

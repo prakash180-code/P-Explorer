@@ -10,6 +10,7 @@ data class ExplorerPreferences(
     val confirmBeforeDelete: Boolean = true,
     val confirmBeforeOverwrite: Boolean = true,
     val rememberLastFolder: Boolean = true,
+    val recentItemsEnabled: Boolean = true,
     val lastFolder: String? = null,
     val favorites: List<FileReference> = emptyList(),
     val recentFiles: List<FileReference> = emptyList(),

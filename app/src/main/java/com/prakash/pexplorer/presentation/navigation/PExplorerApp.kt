@@ -1,5 +1,6 @@
 package com.prakash.pexplorer.presentation.navigation
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
@@ -16,8 +17,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -83,6 +86,36 @@ fun PExplorerApp(
         }
     }
 
+    val onTopLevelSelected: (TopLevelDestination) -> Unit = { destination ->
+        if (destination == TopLevelDestination.FILES) {
+            viewModel.openRoot()
+        }
+        navController.navigateTopLevel(destination)
+    }
+    val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
+    val swipeModifier = if (currentRoute in topLevelRoutes) {
+        Modifier.pointerInput(currentRoute) {
+            var totalDrag = 0f
+            val threshold = 80.dp.toPx()
+            detectHorizontalDragGestures(
+                onDragStart = { totalDrag = 0f },
+                onDragEnd = {
+                    val index = TopLevelDestination.entries.indexOfFirst { it.route == currentRoute }
+                    when {
+                        index < 0 -> Unit
+                        totalDrag <= -threshold && index < TopLevelDestination.entries.lastIndex ->
+                            onTopLevelSelected(TopLevelDestination.entries[index + 1])
+                        totalDrag >= threshold && index > 0 ->
+                            onTopLevelSelected(TopLevelDestination.entries[index - 1])
+                    }
+                },
+                onHorizontalDrag = { _, amount -> totalDrag += amount }
+            )
+        }
+    } else {
+        Modifier
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.messages.collect { message ->
             snackbarHostState.showSnackbar(message)
@@ -95,19 +128,16 @@ fun PExplorerApp(
         bottomBar = {
             BottomNavigationBar(
                 currentRoute = currentRoute,
-                onDestinationSelected = { destination ->
-                    if (destination == TopLevelDestination.FILES) {
-                        viewModel.openRoot()
-                    }
-                    navController.navigateTopLevel(destination)
-                }
+                onDestinationSelected = onTopLevelSelected
             )
         }
     ) { paddingValues ->
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.HOME.route,
-            modifier = Modifier.padding(paddingValues)
+            modifier = Modifier
+                .padding(paddingValues)
+                .then(swipeModifier)
         ) {
             composable(TopLevelDestination.HOME.route) {
                 HomeScreen(
@@ -323,6 +353,7 @@ fun PExplorerApp(
                             onConfirmDeleteChanged = viewModel::setConfirmBeforeDelete,
                             onConfirmOverwriteChanged = viewModel::setConfirmBeforeOverwrite,
                             onRememberLastFolderChanged = viewModel::setRememberLastFolder,
+                            onRecentItemsChanged = viewModel::setRecentItemsEnabled,
                             onClearCache = viewModel::clearCache
                         )
                     } else {

@@ -61,6 +61,7 @@ fun SettingsScreen(
     onConfirmDeleteChanged: (Boolean) -> Unit,
     onConfirmOverwriteChanged: (Boolean) -> Unit,
     onRememberLastFolderChanged: (Boolean) -> Unit,
+    onRecentItemsChanged: (Boolean) -> Unit,
     onClearCache: () -> Unit
 ) {
     var choice by remember { mutableStateOf<SettingsChoice?>(null) }
@@ -152,6 +153,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.remember_last_folder),
                     checked = preferences.rememberLastFolder,
                     onCheckedChange = onRememberLastFolderChanged
+                )
+            }
+            item {
+                SwitchRow(
+                    title = stringResource(R.string.recent_items),
+                    checked = preferences.recentItemsEnabled,
+                    onCheckedChange = onRecentItemsChanged
                 )
             }
 
