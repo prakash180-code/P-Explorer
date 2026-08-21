@@ -26,10 +26,9 @@ fun openFile(context: Context, file: ExplorerFile): String? {
         .setDataAndType(uri, file.mimeType ?: "*/*")
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
-    if (intent.resolveActivity(context.packageManager) == null) {
+    runCatching { context.startActivity(intent) }.getOrElse {
         return context.getString(R.string.no_application_to_open)
     }
-    context.startActivity(Intent.createChooser(intent, context.getString(R.string.open_with)))
     return null
 }
 
