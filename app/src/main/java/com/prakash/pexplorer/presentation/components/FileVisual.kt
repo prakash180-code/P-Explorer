@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import coil.decode.VideoFrameDecoder
+import coil.request.videoFrameMillis
 import com.prakash.pexplorer.domain.model.ExplorerFile
 import com.prakash.pexplorer.domain.model.FileKind
 import java.io.File
@@ -45,12 +47,19 @@ fun FileVisual(
 ) {
     val context = LocalContext.current
     val visualModifier = modifier.clip(RoundedCornerShape(14.dp))
-    if (file.kind == FileKind.IMAGE && !file.isDirectory) {
+    val showPreview = (file.kind == FileKind.IMAGE || file.kind == FileKind.VIDEO) && !file.isDirectory
+    if (showPreview) {
         val request = remember(file.path) {
             ImageRequest.Builder(context)
                 .data(File(file.path))
                 .size(160)
                 .crossfade(false)
+                .apply {
+                    if (file.kind == FileKind.VIDEO) {
+                        decoderFactory(VideoFrameDecoder.Factory())
+                        videoFrameMillis(0)
+                    }
+                }
                 .build()
         }
         SubcomposeAsyncImage(

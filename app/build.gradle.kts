@@ -96,6 +96,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
 
     implementation(libs.coil.compose)
+    implementation(libs.coil.video)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
 
