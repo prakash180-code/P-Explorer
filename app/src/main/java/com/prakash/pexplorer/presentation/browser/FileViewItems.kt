@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -45,19 +47,36 @@ internal fun Modifier.fileItemModifier(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ): Modifier = this
+    .pointerInput(file.path) {
+        var dragDistance = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { dragDistance = 0f },
+            onHorizontalDrag = { change, dragAmount ->
+                change.consume()
+                dragDistance += dragAmount
+            },
+            onDragEnd = {
+                if (kotlin.math.abs(dragDistance) > 64f) {
+                    onSwipeSelect(file.path)
+                }
+            }
+        )
+    }
     .combinedClickable(
         onClick = {
             if (selectionMode) {
-                onToggleSelection(file.path)
+                onRangeSelect(file.path)
             } else if (file.isDirectory) {
                 onOpenDirectory(file.path)
             } else {
                 onOpenFile(file)
             }
         },
-        onLongClick = { onToggleSelection(file.path) }
+        onLongClick = { onLongSelect(file.path) }
     )
     .background(
         if (isSelected) {
@@ -88,7 +107,9 @@ internal fun CompactRowItem(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ) {
     Row(
         modifier = Modifier.fileItemModifier(
@@ -97,7 +118,9 @@ internal fun CompactRowItem(
             isSelected,
             onOpenDirectory,
             onOpenFile,
-            onToggleSelection
+            onRangeSelect,
+            onSwipeSelect,
+            onLongSelect
         )
             .padding(horizontal = 16.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -123,7 +146,9 @@ internal fun DetailedRowItem(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ) {
     Row(
         modifier = Modifier.fileItemModifier(
@@ -132,7 +157,9 @@ internal fun DetailedRowItem(
             isSelected,
             onOpenDirectory,
             onOpenFile,
-            onToggleSelection
+            onRangeSelect,
+            onSwipeSelect,
+            onLongSelect
         )
             .padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -179,7 +206,9 @@ internal fun NameRowItem(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ) {
     Row(
         modifier = Modifier.fileItemModifier(
@@ -188,7 +217,9 @@ internal fun NameRowItem(
             isSelected,
             onOpenDirectory,
             onOpenFile,
-            onToggleSelection
+            onRangeSelect,
+            onSwipeSelect,
+            onLongSelect
         )
             .padding(horizontal = 18.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -214,7 +245,9 @@ internal fun IconGridItem(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ) {
     Column(
         modifier = Modifier.fileItemModifier(
@@ -223,7 +256,9 @@ internal fun IconGridItem(
             isSelected,
             onOpenDirectory,
             onOpenFile,
-            onToggleSelection
+            onRangeSelect,
+            onSwipeSelect,
+            onLongSelect
         )
             .padding(6.dp)
     ) {
@@ -273,7 +308,9 @@ internal fun TileItem(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ) {
     Column(
         modifier = Modifier.fileItemModifier(
@@ -282,7 +319,9 @@ internal fun TileItem(
             isSelected,
             onOpenDirectory,
             onOpenFile,
-            onToggleSelection
+            onRangeSelect,
+            onSwipeSelect,
+            onLongSelect
         )
             .padding(2.dp)
     ) {
@@ -316,7 +355,9 @@ internal fun CardViewItem(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ) {
     Card(
         modifier = Modifier.fileItemModifier(
@@ -325,7 +366,9 @@ internal fun CardViewItem(
             isSelected,
             onOpenDirectory,
             onOpenFile,
-            onToggleSelection
+            onRangeSelect,
+            onSwipeSelect,
+            onLongSelect
         ),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
@@ -374,7 +417,9 @@ internal fun GalleryItem(
     isSelected: Boolean,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (ExplorerFile) -> Unit,
-    onToggleSelection: (String) -> Unit
+    onRangeSelect: (String) -> Unit,
+    onSwipeSelect: (String) -> Unit,
+    onLongSelect: (String) -> Unit
 ) {
     Column(
         modifier = Modifier.fileItemModifier(
@@ -383,7 +428,9 @@ internal fun GalleryItem(
             isSelected,
             onOpenDirectory,
             onOpenFile,
-            onToggleSelection
+            onRangeSelect,
+            onSwipeSelect,
+            onLongSelect
         )
             .padding(4.dp)
     ) {

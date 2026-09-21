@@ -52,7 +52,8 @@ data class BrowserUiState(
     val items: List<ExplorerFile> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val selectedPaths: Set<String> = emptySet()
+    val selectedPaths: Set<String> = emptySet(),
+    val selectionAnchorPath: String? = null
 )
 
 data class TransferUiState(
@@ -194,7 +195,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 browser = it.browser.copy(
                     isLoading = false,
                     errorMessage = if (accessGranted) null else permissionMessage(),
-                    selectedPaths = emptySet()
+                    selectedPaths = emptySet(),
+                    selectionAnchorPath = null
                 )
             )
         }
@@ -311,7 +313,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                     items = emptyList(),
                     isLoading = true,
                     errorMessage = null,
-                    selectedPaths = emptySet()
+                    selectedPaths = emptySet(),
+                    selectionAnchorPath = null
                 )
             )
         }
@@ -909,8 +912,67 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun toggleSelection(path: String) {
         _uiState.update { state ->
             val selected = state.browser.selectedPaths.toMutableSet()
-            if (!selected.add(path)) selected.remove(path)
-            state.copy(browser = state.browser.copy(selectedPaths = selected))
+            val anchor = state.browser.selectionAnchorPath
+            val updatedAnchor = if (!selected.add(path)) {
+                selected.remove(path)
+                when {
+                    selected.isEmpty() -> null
+                    anchor == path -> selected.lastOrNull()
+                    else -> anchor
+                }
+            } else {
+                anchor ?: path
+            }
+            state.copy(browser = state.browser.copy(selectedPaths = selected, selectionAnchorPath = updatedAnchor))
+        }
+    }
+
+    fun setSelectionAnchor(path: String) {
+        _uiState.update { state ->
+            state.copy(
+                browser = state.browser.copy(
+                    selectedPaths = setOf(path),
+                    selectionAnchorPath = path
+                )
+            )
+        }
+    }
+
+    fun selectRange(targetPath: String) {
+        val state = _uiState.value
+        val anchor = state.browser.selectionAnchorPath ?: run {
+            setSelectionAnchor(targetPath)
+            return
+        }
+        val items = state.browser.items
+        val fromIndex = items.indexOfFirst { it.path == anchor }
+        val toIndex = items.indexOfFirst { it.path == targetPath }
+        if (fromIndex < 0 || toIndex < 0) {
+            toggleSelection(targetPath)
+        } else {
+            val start = minOf(fromIndex, toIndex)
+            val end = maxOf(fromIndex, toIndex)
+            _uiState.update {
+                it.copy(
+                    browser = it.browser.copy(
+                        selectedPaths = items.slice(start..end).mapTo(mutableSetOf(), ExplorerFile::path),
+                        selectionAnchorPath = anchor
+                    )
+                )
+            }
+        }
+    }
+
+    fun invertSelection() {
+        _uiState.update { state ->
+            val paths = state.browser.items.mapTo(mutableSetOf(), ExplorerFile::path)
+            val inverted = (paths - state.browser.selectedPaths)
+            state.copy(
+                browser = state.browser.copy(
+                    selectedPaths = inverted,
+                    selectionAnchorPath = inverted.firstOrNull() ?: state.browser.selectionAnchorPath
+                )
+            )
         }
     }
 
@@ -918,14 +980,17 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         _uiState.update { state ->
             state.copy(
                 browser = state.browser.copy(
-                    selectedPaths = state.browser.items.mapTo(mutableSetOf(), ExplorerFile::path)
+                    selectedPaths = state.browser.items.mapTo(mutableSetOf(), ExplorerFile::path),
+                    selectionAnchorPath = state.browser.items.firstOrNull()?.path
                 )
             )
         }
     }
 
     fun clearSelection() {
-        _uiState.update { it.copy(browser = it.browser.copy(selectedPaths = emptySet())) }
+        _uiState.update {
+            it.copy(browser = it.browser.copy(selectedPaths = emptySet(), selectionAnchorPath = null))
+        }
     }
 
     fun createFolder(name: String) {

@@ -63,6 +63,7 @@
     <string name="open_with">Open with</string>
     <string name="properties">Properties</string>
     <string name="select_all">Select all</string>
+    <string name="select_invert">Select invert</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
     <string name="use_current_folder">Use current folder</string>
